@@ -31,10 +31,7 @@ def enrich_chunks(chunks: list[Chunk], source: str, imports: list[str]) -> list[
     """Populate `context_text` on every chunk from one file via one LLM call per chunk.
 
     `chunks` must all belong to the same file — `source`/`imports` are
-    shared across the whole batch. Keeping that shared content as the first,
-    identical part of every prompt and the chunk-specific text last lets the
-    model provider's automatic prefix caching apply across the calls in this
-    batch, so the file's content is only paid for once.
+    shared across the whole batch.
     """
     imports_block = "\n".join(imports)
     return [
