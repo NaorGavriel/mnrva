@@ -88,17 +88,18 @@ Parsing only — no LLM calls, no embedding calls. Split into a thin file-level 
   - Reads the file, gets a `Parser` from `registry`, parses it to a `Tree`, delegates to `extract_chunks` with that language's `LANGUAGE_CONFIG` entry.
   - `registry` is a parameter, not a global — this is the seam that lets tests inject a fake registry instead of loading real grammars.
 
-* `extract_chunks(tree: Tree, source: bytes, config: LanguageConfig) -> list[Chunk]`
-  - **Pure function** — no path, no disk I/O, no grammar loading. Same `(tree, source, config)` always produces the same chunks. This is what makes it unit-testable against inline source strings, with no fixture files required.
+* `extract_chunks(tree: Tree, source: bytes, config: LanguageConfig, path: Path) -> list[Chunk]`
+  - **Pure function** — no disk I/O, no grammar loading. Same `(tree, source, config, path)` always produces the same chunks. This is what makes it unit-testable against inline source strings, with no fixture files required.
   - Two passes, deliberately overlapping:
     1. Query `container_node_types` → one chunk per container (e.g. each class), `kind="class"`.
     2. Query `unit_node_types` at any depth → one chunk per function/method, `kind="function"`, with `parent_id` set to the nearest enclosing container chunk's id, or `None` if there isn't one.
   - A method produces both its own chunk *and* contributes to its parent class's chunk text — intentional duplication, so retrieval works at both class and method granularity.
   - Files with no classes (only top-level functions) work identically — `parent_id` is simply `None` throughout. No special-casing needed for "files that only have methods in them."
 
-* `_query_nodes(root: Node, node_types: set[str]) -> list[Node]`
+* `_query_nodes(language: Language, root: Node, node_types: set[str]) -> list[Node]`
+  - Matches via tree-sitter's native `Query`/`QueryCursor` engine : builds a query string of one bare `(node_type) @match` pattern per entry in `node_types`, compiles it once per `(language, node_types)` pair (cached in `_get_query`/`_QUERY_CACHE`), then runs it with `QueryCursor(query).captures(root)`. Measured ~40% faster per call than a manual recursive walk on this repo's own `code_parser.py`; the C-side match loop wins over Python-level `node.children` recursion. A manual-walk version was implemented and benchmarked first and is intentionally not kept — see git history if the comparison needs revisiting.
 * `_nearest_ancestor(node: Node, container_node_types: set[str]) -> Node | None`
-* `_make_chunk(node: Node, source: bytes, path: Path, language: str, kind: str, parent_id: str | None) -> Chunk`
+* `_make_chunk(node: Node, source: bytes, path: Path, language: str, kind: str, class_name: str, parent_id: str | None) -> Chunk`
 * `_extract_imports(tree: Tree, source: bytes, config: LanguageConfig) -> list[str]` — driven by an `import_node_types` entry in `LANGUAGE_CONFIG`, not by per-language branches inside this function.
 
 **Explicitly out of scope for this module** — separate modules, separate failure domains:
