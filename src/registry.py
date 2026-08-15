@@ -35,4 +35,9 @@ class LanguageRegistry:
 
     def get_parser(self, language: str) -> Parser:
         """Return the cached `Parser` for `language`."""
-        return self._parsers[language]
+        try:
+            return self._parsers[language]
+        except KeyError:
+            raise ValueError(
+                f"unsupported language {language!r}; supported: {sorted(self._parsers)}"
+            ) from None
