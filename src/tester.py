@@ -3,6 +3,7 @@ from pathlib import Path
 import db
 from code_parser import extract_chunks, parse_code_file
 from embeddings import embed_text
+from enrichment import enrich_chunks
 from languages import LANGUAGE_CONFIG, get_language
 from registry import LanguageRegistry
 
@@ -56,14 +57,30 @@ def test_parse_code_file() -> None:
     assert language is not None, f"no language config for {path}"
 
     registry = LanguageRegistry()
-    chunks = parse_code_file(path, language, registry)
+    parsed = parse_code_file(path, language, registry)
 
-    print(f"parsed {len(chunks)} chunks from {path}")
-    for chunk in chunks:
+    print(f"parsed {len(parsed.chunks)} chunks from {path}")
+    for chunk in parsed.chunks:
         print(
             f"  kind={chunk.kind:9} class_name={chunk.class_name!r:12} "
             f"symbol_name={chunk.symbol_name!r:16} parent_id={chunk.parent_id}"
         )
+
+
+def test_enrich_chunks() -> None:
+    """Exercise enrich_chunks end to end against the live OpenAI API."""
+    path = Path(__file__).parent / "models.py"
+    language = get_language(path)
+    assert language is not None, f"no language config for {path}"
+
+    registry = LanguageRegistry()
+    parsed = parse_code_file(path, language, registry)
+
+    enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
+    print(f"enriched {len(enriched)} chunks from {path}")
+    for chunk in enriched:
+        assert chunk.context_text, "context_text was not populated"
+        print(f"  symbol_name={chunk.symbol_name!r:16} context_text={chunk.context_text!r}")
 
 
 if __name__ == "__main__":
@@ -71,3 +88,4 @@ if __name__ == "__main__":
     test_db_init()
     test_extract_chunks_inline()
     test_parse_code_file()
+    test_enrich_chunks()

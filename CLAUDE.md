@@ -50,6 +50,12 @@ there.
 `Chunk` (in `models.py`) is the one data contract shared across all of
 these — don't introduce a parallel shape.
 
+## Assistant rules
+
+- Never run code (no executing scripts, no `python -c`, no invoking test
+  suites or the app). Only edit and create source files.
+- Never edit `.env`. If a new environment variable is needed, tell the user.
+
 ## Conventions
 
 - Docstrings on every function and class (including private/underscore-prefixed

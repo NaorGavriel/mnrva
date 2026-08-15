@@ -4,21 +4,24 @@ from typing import Literal
 from tree_sitter import Language, Node, Query, QueryCursor, Tree
 
 from languages import LANGUAGE_CONFIG, LanguageConfig
-from models import Chunk, make_chunk_id, make_content_hash
+from models import Chunk, ParsedFile, make_chunk_id, make_content_hash
 from registry import GrammarRegistry
 
 
-def parse_code_file(path: Path, language: str, registry: GrammarRegistry) -> list[Chunk]:
+def parse_code_file(path: Path, language: str, registry: GrammarRegistry) -> ParsedFile:
     """Read, parse, and chunk a single source file.
 
     Thin file-level orchestrator: all extraction logic lives in the pure
-    `extract_chunks`.
+    `extract_chunks`/`_extract_imports`. Returns `source`/`imports` alongside
+    the chunks.
     """
     source = path.read_bytes()
     parser = registry.get_parser(language)
     tree = parser.parse(source)
     config = LANGUAGE_CONFIG[path.suffix]
-    return extract_chunks(tree, source, config, path)
+    chunks = extract_chunks(tree, source, config, path)
+    imports = _extract_imports(tree, source, config)
+    return ParsedFile(chunks=chunks, source=source.decode("utf-8"), imports=imports)
 
 
 def extract_chunks(

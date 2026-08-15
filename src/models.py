@@ -39,3 +39,13 @@ class Chunk:
     parent_id: str | None
     context_text: str | None = None
     embedding: list[float] | None = None
+
+
+@dataclass
+class ParsedFile:
+    """The output of parsing one source file: its chunks plus the shared
+    context (`source`, `imports`) enrichment needs but `Chunk` doesn't carry."""
+
+    chunks: list[Chunk]
+    source: str
+    imports: list[str]
