@@ -52,6 +52,9 @@ these — don't introduce a parallel shape.
 
 ## Conventions
 
+- Docstrings on every function and class (including private/underscore-prefixed
+  helpers): one-line summary; add `Args`/`Returns` only when the signature's
+  types don't already make them obvious.
 - Type hints on all function signatures.
 - One concern per module: LLM enrichment calls, embedding calls, and db
   writes stay in their own files.

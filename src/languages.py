@@ -16,6 +16,8 @@ PROSE_EXTENSIONS = {
 
 @dataclass
 class LanguageConfig:
+    """Per-language tree-sitter node types used to route parsing and chunking."""
+
     language: str
     container_node_types: set[str]
     unit_node_types: set[str]
@@ -65,13 +67,16 @@ LANGUAGE_CONFIG: dict[str, LanguageConfig] = {
 
 
 def get_language(path: Path) -> str | None:
+    """Return the canonical language name for `path`'s extension, or None if unsupported."""
     config = LANGUAGE_CONFIG.get(path.suffix)
     return config.language if config else None
 
 
 def is_code_file(path: Path) -> bool:
+    """Whether `path`'s extension is routed to tree-sitter chunking."""
     return path.suffix in LANGUAGE_CONFIG
 
 
 def is_prose_file(path: Path) -> bool:
+    """Whether `path`'s extension is routed to prose/semantic chunking."""
     return path.suffix in PROSE_EXTENSIONS

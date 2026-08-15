@@ -7,16 +7,25 @@ from typing import Literal
 CHUNK_NAMESPACE = uuid.UUID("d6e5f8c2-4b1a-4e3a-9c7d-8a2b6f0e1d3c")
 
 def make_chunk_id(path: Path, kind: str, class_name: str, symbol_name: str) -> str:
+    """Derive a chunk's stable, content-independent id.
+
+    `uuid5` over (path, kind, class_name, symbol_name) — deterministic, so
+    editing a chunk's body never changes its id.
+    """
     return str(
         uuid.uuid5(CHUNK_NAMESPACE, f"{path}{kind}{class_name}{symbol_name}")
     )
 
 
 def make_content_hash(raw_text: str) -> str:
+    """Fingerprint a chunk's body, used to decide whether refresh needs to re-embed."""
     return hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
 @dataclass
 class Chunk:
+    """A function/class/method-level unit of source code, plus its
+    downstream enrichment and embedding once those stages have run."""
+
     id: str
     content_hash: str
     path: Path
