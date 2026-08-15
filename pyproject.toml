@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "openai==0.26.5",
     "qdrant-client>=1.19.0",
+    "tree-sitter>=0.26.0",
 ]
 
 [project.scripts]
