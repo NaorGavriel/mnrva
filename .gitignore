@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# mnrva: scratch clone directory created by repository_clone.clone_repository
+repository_files/
