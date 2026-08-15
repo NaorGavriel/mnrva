@@ -59,6 +59,10 @@ def test_parse_code_file() -> None:
     registry = LanguageRegistry()
     parsed = parse_code_file(path, language, registry)
 
+    
+    print(f"Imports : \n{parsed.imports}")
+    print(f"Source code : \n{parsed.source}")
+
     print(f"parsed {len(parsed.chunks)} chunks from {path}")
     for chunk in parsed.chunks:
         print(
@@ -75,17 +79,21 @@ def test_enrich_chunks() -> None:
 
     registry = LanguageRegistry()
     parsed = parse_code_file(path, language, registry)
-
+    
     enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
     print(f"enriched {len(enriched)} chunks from {path}")
     for chunk in enriched:
         assert chunk.context_text, "context_text was not populated"
-        print(f"  symbol_name={chunk.symbol_name!r:16} context_text={chunk.context_text!r}")
+        if chunk.kind == "class" :
+            print(f"kind={chunk.kind:9} class_name={chunk.class_name!r:12}")
+        else:
+            print(f"kind={chunk.kind:9} symbol_name={chunk.symbol_name!r:16}")
+        print(f"context_text={chunk.context_text!r}")
 
 
 if __name__ == "__main__":
-    test_embedding()
-    test_db_init()
-    test_extract_chunks_inline()
-    test_parse_code_file()
+    #test_embedding()
+    #test_db_init()
+    #test_extract_chunks_inline()
+    #test_parse_code_file()
     test_enrich_chunks()
