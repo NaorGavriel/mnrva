@@ -69,13 +69,17 @@ Loads and caches tree-sitter `Language`/`Parser` objects. This is the only modul
 
 ## 1.4 `repository_clone.py`
 
-* `clone_repository(github_url: str, dest_dir: Path) -> Path` — shell out via `subprocess.run([...])` with an argument list, never a shell string, since `github_url` is user-provided input. For ingestion, always a fresh shallow clone (`--depth=1`) — there's no prior state to diff against yet, so there's nothing history would buy here.
-* `get_current_commit_sha(repo_path: Path) -> str` — cheap to capture at ingestion time; store it alongside the repo's chunks will be used in ReSync component.
-
-Clone depth for *re*-syncing an already-ingested repo is a Refresh & Sync concern, not an ingestion one — see §1.8.
+Full design, including the destination layout, pruning strategy, and clone
+depth decision: `docs/repository_clone.md`. Summary: `clone_repository`
+does a full (not shallow) clone into a single fixed `repository_files/`
+directory, wiping and re-cloning fresh on every run; `prune_unwanted_files`
+then deletes everything `repository_parser.py`'s `list_source_files` didn't
+mark as wanted; `get_current_commit_sha` is captured for the future Refresh
+& Sync component.
 
 ## 1.5 `repository_parser.py`
-Returns the filtered file list for ingestion.
+Returns the filtered file list for ingestion. Decision logic only — no
+disk mutation; `repository_clone.py` (§1.4) executes the deletion.
 
 * `list_source_files(repo_path: Path) -> list[Path]` — `git ls-files`, filtered through the extension allowlist (`languages.py`), a filename denylist (e.g. `package-lock.json`), and a file-size cutoff.
 * `_passes_size_cutoff(path: Path, max_bytes: int) -> bool`
