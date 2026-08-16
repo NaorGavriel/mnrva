@@ -29,3 +29,22 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+# grid is a matrix of coordinate pairs; formatted one row per line so the
+# trailing element ends up alone on its own line, no trailing comma.
+[tool.some_plugin]
+grid = [
+    ["a", "b"],
+    ["c", "d"]
+]
+
+# [[...]] (double brackets) is TOML's array-of-tables syntax: each repeated
+# header appends one more entry to the same list, rather than declaring a
+# new table.
+[[tool.some_plugin.rules]]
+name = "no-unused-vars"
+severity = "error"
+
+[[tool.some_plugin.rules]]
+name = "no-console"
+severity = "warn"
