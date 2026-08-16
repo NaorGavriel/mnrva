@@ -37,18 +37,16 @@ def get_current_commit_sha(repo_path: Path) -> str:
     return result.stdout.strip()
 
 
-def prune_unwanted_files(repo_path: Path, wanted_files: list[Path]) -> list[Path]:
-    """Delete every git-tracked file under `repo_path` that isn't in `wanted_files`.
-
-    Also removes directories left empty by the deletions. `.git/` is never
-    touched — only paths returned by `git ls-files` are ever considered for
-    deletion.
+def prune_unwanted_files(repo_path: Path, unwanted_files: list[Path]) -> list[Path]:
+    """Delete every path in `unwanted_files` from `repo_path`.
+    `.git/` is never touched.
     """
-    tracked = _git_ls_files(repo_path)
-    wanted = set(wanted_files)
-    removed = [path for path in tracked if path not in wanted]
-    for path in removed:
-        (repo_path / path).unlink()
+    removed = []
+    for path in unwanted_files:
+        full_path = repo_path / path
+        if full_path.exists():
+            full_path.unlink()
+            removed.append(path)
     _prune_empty_directories(repo_path)
     return removed
 
@@ -60,18 +58,6 @@ def delete_repository(repo_path: Path) -> None:
     have been successfully embedded and upserted into Qdrant.
     """
     shutil.rmtree(repo_path)
-
-
-def _git_ls_files(repo_path: Path) -> list[Path]:
-    """Return every git-tracked file path under `repo_path`, relative to it."""
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=repo_path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return [Path(line) for line in result.stdout.splitlines() if line]
 
 
 def _prune_empty_directories(repo_path: Path) -> None:
