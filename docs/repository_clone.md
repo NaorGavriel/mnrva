@@ -1,167 +1,51 @@
 # Repository Cloning & Pruning
 
-Expands on the brief sketch in `docs/code_parser.md` §1.4/§1.5 and supersedes it
-on clone depth and where filtering happens. Covers the process that takes a GitHub repository
-link and produces `repository_files/` on disk containing only the files
-ingestion cares about.
-
-## 1.1 Process overview
-
 ```
-github_url
-   │
-   ▼
-clone_repository(github_url, dest_dir)     [repository_clone.py]
-   │  wipe dest_dir if it exists, shallow `git clone --depth=1`
-   ▼
-repo_path (= dest_dir, e.g. repository_files/)
-   │
-   ▼
-list_unwanted_files(repo_path)             [repository_parser.py]
-   │  git ls-files, then everything list_source_files (same module)
-   │  would exclude — extension allowlist + filename denylist + size
-   │  cutoff — pure decision, no disk mutation
-   ▼
-unwanted_files: list[Path]
-   │
-   ▼
-prune_unwanted_files(repo_path, unwanted_files)  [repository_clone.py]
-   │  deletes every path in unwanted_files; cleans up now-empty
-   │  directories
-   ▼
-repository_files/ now contains only wanted files on disk
-   (still a full git checkout — .git/ untouched)
+clone_repository(github_url, dest_dir)      [repository_clone.py]
+  → shallow `git clone --depth=1`, wiping dest_dir first
+list_unwanted_files(repo_path)              [repository_parser.py]
+  → git ls-files minus list_source_files's keep-list
+prune_unwanted_files(repo_path, unwanted)   [repository_clone.py]
+  → deletes unwanted files + resulting empty dirs, never touches .git/
 ```
 
-Two modules, two concerns:
+`repository_parser.py` decides (pure, no disk mutation); `repository_clone.py` acts (executes deletion, no allowlist/denylist logic of its own — never calls `git ls-files`). `list_source_files`/`list_unwanted_files` share one predicate (`_is_wanted`) so they can't disagree.
 
-- **`repository_parser.py` decides** what's wanted/unwanted. Pure functions
-  of a repo checkout on disk → a list of paths. No mutation, easy to unit
-  test. `list_source_files` (the keep list, consumed by parsing) and
-  `list_unwanted_files` (the deletion list, consumed by pruning) share one
-  predicate (`_is_wanted`), so they can never disagree with each other.
-- **`repository_clone.py` acts** — gets the repo onto disk, and (given the
-  parser's decision as input) physically removes what isn't wanted. Never
-  contains extension/denylist/size-cutoff logic, and never calls `git
-  ls-files` itself — it has no concept of "wanted," only "here's what to
-  delete."
+## `repository_clone.py`
 
-`prune_unwanted_files` takes `unwanted_files` as a parameter rather than
-importing `list_unwanted_files` directly — the two modules stay decoupled,
-and the composition happens in the orchestrator (`repository_ingester.py`,
-component 1's entry point, not yet built).
+* `clone_repository(github_url, dest_dir) -> Path` — wipes `dest_dir` if present, `git clone --depth=1` via `subprocess.run` (arg list, not a shell string — `github_url` is external input). Works for any git host, not just GitHub. Raises `CloneError` (with stderr) on failure.
+* `get_current_commit_sha(repo_path) -> str` — `git rev-parse HEAD`. Captured for a future Refresh & Sync component.
+* `prune_unwanted_files(repo_path, unwanted_files) -> list[Path]` — deletes each given path if it exists, removes now-empty dirs, skips anything under `.git/` even if given. Returns what it removed.
+* `delete_repository(repo_path) -> None` — `shutil.rmtree`. Called after a successful upsert; left alone on failure for inspection.
 
-## 1.2 `repository_clone.py`
+**Clone depth is shallow** — no history needed, since a future resync process keeps its own persistent clone and `fetch`/`diff`/`show`s incrementally rather than reusing this one.
 
-* `clone_repository(github_url: str, dest_dir: Path) -> Path`
-  - If `dest_dir` already exists, `shutil.rmtree(dest_dir)` first — always a
-    fresh clone, no reuse/pull logic. Simple, no stale-state bugs.
-  - Shallow clone: `subprocess.run(["git", "clone", "--depth=1", github_url,
-    str(dest_dir)], check=True, capture_output=True, text=True)`. Argument
-    list, never a shell string, since `github_url` is user-provided input.
-  - Despite the parameter name, nothing here is GitHub-specific — any URL
-    `git clone` accepts works (GitLab, Bitbucket, local paths). No GitHub
-    REST API calls.
-  - On `CalledProcessError`, re-raise as a `CloneError(RuntimeError)`
-    carrying the captured stderr.
-  - Returns `dest_dir`.
+**Why `subprocess` + `git`, not a provider API**: git's clone/fetch protocol is already host-agnostic (GitHub/GitLab/Bitbucket/self-hosted all speak it identically); a REST API isn't (different schema/auth/rate-limits per host). If multi-source or private-repo support is needed later, the seam is a thin per-host auth/URL adapter in front of these same calls, not a provider class replacing git.
 
-* `get_current_commit_sha(repo_path: Path) -> str`
-  - `git rev-parse HEAD`, `cwd=repo_path`, stripped stdout. Captured at
-    ingestion time and stored alongside the repo's chunks for the future
-    Refresh & Sync component to diff against.
+## `repository_parser.py`
 
-* `prune_unwanted_files(repo_path: Path, unwanted_files: list[Path]) -> list[Path]`
-  - Takes the exact deletion list as input — does not call `git ls-files`
-    or re-derive what's unwanted itself. That decision lives entirely in
-    `repository_parser.py::list_unwanted_files` (§1.5).
-  - Delete every path in `unwanted_files` that still exists
-    (`(repo_path / path).unlink()`).
-  - Walk `repo_path` bottom-up (skip `.git/`) and `rmdir` any directory left
-    empty by the deletions.
-  - Returns the paths actually removed — useful for logging and for tests
-    to assert on.
-  - Never touches `.git/` — any path under it is skipped even if passed in,
-    a defensive guard rather than reliance on `list_unwanted_files` never
-    producing one.
+* `list_tracked_files(repo_path) -> list[Path]` — raw `git ls-files`.
+* `list_source_files(repo_path) -> list[Path]` — kept files: `list_tracked_files` filtered by `_is_wanted`.
+* `list_unwanted_files(repo_path) -> list[Path]` — the inverse; feeds `prune_unwanted_files`.
+* `_is_wanted(repo_path, path)` — extension allowlist (`languages.LANGUAGE_CONFIG` + `PROSE_EXTENSIONS`) AND NOT `_is_denied_filename` AND `_passes_size_cutoff` (`MAX_FILE_SIZE_BYTES = 1_000_000`, placeholder).
+* `DENIED_FILENAMES` — lockfiles that'd otherwise pass the extension check (`package-lock.json`, `pnpm-lock.yaml`, etc.)
 
-* `CloneError(RuntimeError)` — raised by `clone_repository` on any git
-  failure, message includes the captured stderr.
+## Destination & lifecycle
 
-* `delete_repository(repo_path: Path) -> None`
-  - `shutil.rmtree(repo_path)`. Called by the orchestrator
-    (`repository_ingester.py`) after chunks are successfully embedded and
-    upserted into Qdrant — see §1.6. Deliberately *not* called on failure,
-    so a broken run leaves `repository_files/` on disk for inspection.
+* Single fixed dir, `repository_files/` — one repo at a time, wiped and re-cloned fresh every run.
+* Scratch space, not state: deleted after a successful upsert (carries nothing Qdrant doesn't already have). Refresh & Sync is a separate process (maybe a different machine) with no guaranteed access to it — keeps its own persistent clone.
 
-## 1.3 Clone depth: shallow
+## Testing strategy
 
-`--depth=1`, there's no prior state to diff.
+* `clone_repository` — real local fixture repo (`git init` in `tmp_path`): successful clone, wipe-before-reclone, `CloneError` on a bad source.
+* `get_current_commit_sha` — matches `git rev-parse HEAD` directly.
+* `prune_unwanted_files` — explicit deletion list against a fixture with extra files: only untouched files remain, `.git/` untouched, empty dirs cleaned up.
+* `delete_repository` — directory gone afterward.
+* `list_source_files`/`list_unwanted_files`/predicates — fixture repo with wanted/lockfile/oversized files; assert the two lists partition tracked files with no overlap/gaps.
 
-## 1.4 Multi-source support (GitHub/GitLab/Bitbucket) or private repos
+## Open decisions
 
-Later on multi-source support and private repos will be supported,
-the solution is a thin wrapper sitting in front of the same `clone_repository`/`fetch`/`diff`/`show`
-calls.
-
-## 1.5 `repository_parser.py`
-
-* `list_tracked_files(repo_path: Path) -> list[Path]` — raw `git ls-files`,
-  unfiltered. The one place either of the two functions below shells out
-  to git.
-* `list_source_files(repo_path: Path) -> list[Path]` — the keep list:
-  `list_tracked_files`, filtered through `_is_wanted`.
-* `list_unwanted_files(repo_path: Path) -> list[Path]` — the deletion list:
-  `list_tracked_files`, keeping only what `_is_wanted` rejects. Feeds
-  `repository_clone.py::prune_unwanted_files` (§1.2).
-* `_is_wanted(repo_path: Path, path: Path) -> bool` — the one predicate
-  both list functions share, so they can never disagree about a file:
-  - the extension allowlist (`languages.py`'s `LANGUAGE_CONFIG` keys + `PROSE_EXTENSIONS`),
-  - not `_is_denied_filename` — `DENIED_FILENAMES` is a filename denylist
-    for files that would otherwise pass the extension allowlist.
-* `_is_denied_filename(path: Path) -> bool`
-* `_passes_size_cutoff(path: Path, max_bytes: int) -> bool`
-
-This is the single module that decides "wanted or not" — `repository_clone.py` never re-derives this logic, it only executes the deletion `list_unwanted_files` hands it.
-
-## 1.6 Destination layout, re-run behavior, and lifecycle
-
-- Single fixed working directory, `repository_files/` — one repo indexed at
-  a time.
-- Every ingestion run wipes and re-clones fresh (§1.2). Simplicity over incremental reuse.
-- **`repository_files/` is scratch space, not state.** It exists only to
-  give `list_source_files`/`parse_code_file` something to read from disk
-  during one ingestion run. It carries no information Qdrant doesn't also
-  end up with, so the orchestrator deletes it (`delete_repository`, §1.2)
-  once that run's chunks are successfully upserted.
-
-## 1.7 Testing strategy
-
-* `clone_repository` — integration test against a small real local git repo
-  (created via `git init` in `tmp_path`, no network dependency), asserting
-  the clone lands at `dest_dir` and `.git/` is present. A second test
-  asserts an existing `dest_dir` gets wiped before the clone runs. Failure
-  path: point at a non-existent local path and assert `CloneError`.
-* `get_current_commit_sha` — assert it matches `git rev-parse HEAD` run
-  directly against the same fixture repo.
-* `prune_unwanted_files` — given an explicit `unwanted_files` list against a
-  fixture repo with extra files on disk, assert only the untouched files
-  remain, `.git/` is untouched, and now-empty directories were removed.
-* `delete_repository` — assert the directory is gone afterward; trivial but
-  worth a smoke test given it's a destructive filesystem call.
-* `list_source_files` / `list_unwanted_files` / `_is_denied_filename` /
-  `_passes_size_cutoff` — as already planned in `docs/code_parser.md` §1.7:
-  predicates get plain unit tests; `list_source_files`/`list_unwanted_files`
-  get an integration test against a real `git init`'d fixture repo (a mix
-  of wanted files, a lockfile, and an oversized file), not a mocked
-  `subprocess` — and since both share `_is_wanted`, one test can assert
-  they partition the fixture's tracked files with no overlap and no gaps.
-
-## 1.8 Open decisions / known limitations
-
-* **Private repos / auth are not handled.** `clone_repository` assumes a
-  publicly cloneable URL. No token/SSH-key plumbing yet.
-* **`MAX_FILE_SIZE_BYTES` is a placeholder default (`1_000_000`)**.
-* **Symlinks and submodules** inside a cloned repo aren't addressed — how
-  `list_source_files`/`list_unwanted_files`/pruning should treat them isn't
-  decided.
+* Private repos / auth — not handled.
+* `MAX_FILE_SIZE_BYTES` — placeholder default, not derived from a real constraint.
+* Symlinks / submodules — unaddressed.
+* Where the ingested commit sha durably lives for a future resync process (no guaranteed filesystem access) — likely Qdrant repo-level metadata, not decided.
