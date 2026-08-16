@@ -1,129 +1,57 @@
 # Code Parsing Component
 
 ## 1.1 `models.py`
-Shared data shapes used by both the parsing stage and the downstream (enrichment/embedding) stages.
 
-* `Chunk` — dataclass:
-  - `id: str` — **stable identity, not a content fingerprint.** `uuid5(CHUNK_NAMESPACE, file_path + kind + class_name + symbol_name)`. Deterministic and content-independent, so editing a chunk's body never changes its id — the Refresh & Sync Pipeline can upsert directly by id with no search-then-delete step, and never leaves orphaned points behind in Qdrant. `uuid5` specifically (not a raw hex digest) because Qdrant point ids are constrained to 64-bit unsigned integers or UUIDs only — a plain hash string is rejected.
-    - `CHUNK_NAMESPACE` is a hardcoded constant UUID (generate once with `uuid4()`, never regenerate) — changing it shifts every id in the system.
-    - Id-construction inputs by chunk shape:
-
-      | chunk type | class_name | symbol_name |
-      |---|---|---|
-      | top-level function | `""` | function name |
-      | method | class name | method name |
-      | class (container) | class name | `""` |
-  - `content_hash: str` — `sha256(raw_text)` hex digest. A fingerprint, not an identifier — lives in the Qdrant payload, compared on refresh to decide whether re-embedding is needed. Unlike `id`, this is expected to change whenever the chunk's body changes.
-  - `path: Path`
-  - `language: str`
-  - `kind: Literal["class", "function"]`
-  - `class_name: str` — `""` for top-level functions and other non-nested chunks; the class name for methods and for the class chunk itself. Also feeds `id` construction above.
-  - `symbol_name: str` — the function/method/class name, used in `id` construction and independently useful for display and enrichment.
-  - `raw_text: str` — decoded UTF-8. Non-UTF-8 files are filtered upstream in `repository_parser.py`.
-  - `start_byte: int`, `end_byte: int`
-  - `parent_id: str | None` — id of the enclosing container chunk (e.g. the class a method lives in). `None` for top-level functions, nested helper functions with no enclosing container, and for container chunks themselves.
-  - `context_text: str | None = None` — populated later by `enrichment.py`, not by `code_parser.py`.
-  - `embedding: list[float] | None = None` — populated later by `embedding.py`, not by `code_parser.py`.
+* `Chunk` — `id`, `content_hash`, `path`, `language`, `kind`, `class_name`, `symbol_name`, `raw_text`, `start_byte`, `end_byte`, `parent_id`, `context_text=None`, `embedding=None`.
+* `make_chunk_id(path, kind, class_name, symbol_name)` → `uuid5(CHUNK_NAMESPACE, ...)`. Deterministic, content-independent — refresh can upsert by id, no search-then-delete. `class_name`/`symbol_name` are `""` for top-level functions / class chunks respectively.
+* `make_content_hash(raw_text)` → sha256 hex digest. Compared on refresh to decide re-embedding.
+* `chunk_retrieval_text(chunk)` → `context_text + raw_text` if enriched, else `raw_text`. Shared by embedding and BM25 so both see identical content.
+* `ParsedFile` — `chunks`, `source`, `imports`.
 
 ## 1.2 `languages.py`
-Single source of truth for language/extension configuration — avoids the extension list existing separately in the ingestion allowlist and the tree-sitter routing table.
 
-* `LANGUAGE_CONFIG` — `extension -> LanguageConfig`, per §3.3 of the main architecture doc:
-  - `language: str` — canonical name (`"python"`, `"typescript"`, `"csharp"`, ...). Joins into the language names `registry.py`'s `LanguageRegistry` builds a `Parser` for — see §1.3.
-  - `container_node_types: set[str]` — node types chunked as a whole unit (e.g. `{"class_definition"}` for Python)
-  - `unit_node_types: set[str]` — node types chunked individually, matched at any depth in the tree, including inside containers and inside other units. Nested helper functions are chunked too — this is intentional.
-* `get_language(path: Path) -> str | None`
-* `is_code_file(path: Path) -> bool`
-* `is_prose_file(path: Path) -> bool`
-
-**Known gap to resolve before implementing JS/TS support:** a named arrow function (`const handleClick = () => {...}`) is not its own node type — it's an `arrow_function` nested inside a `variable_declarator`. A flat `unit_node_types` set will not catch this pattern, which is common in real JS/TS code. Decide before shipping JS/TS: accept under-chunked arrow functions in v1, or extend `unit_node_types` to express a declarator-shape match rather than a bare node type.
+* `LANGUAGE_CONFIG: dict[ext, LanguageConfig]` — `language`, `container_node_types`, `unit_node_types`, `import_node_types`. Single source of truth for extension routing.
+* `get_language`, `is_code_file`, `is_prose_file`.
+* **Open**: JS/TS named arrow functions (`const f = () => {}`) aren't their own node type — nested in `variable_declarator`. A flat `unit_node_types` won't catch them; decide before shipping JS/TS.
 
 ## 1.3 `registry.py`
-Loads and caches tree-sitter `Language`/`Parser` objects. This is the only module that imports grammar packages directly — everything downstream depends on the `GrammarRegistry` interface, never on the concrete packages.
 
-* `GrammarRegistry` (Protocol) — `get_parser(language: str) -> Parser`
-* `LanguageRegistry` (implementation) — builds every supported language's `Parser` eagerly in `__init__`, from static top-level imports:
-  ```python
-  import tree_sitter_python as tspython
-  import tree_sitter_javascript as tsjavascript
-  import tree_sitter_typescript as tstypescript
-  import tree_sitter_c_sharp as tscsharp
-  from tree_sitter import Language, Parser
+* `GrammarRegistry` (Protocol) — `get_parser(language) -> Parser`.
+* `LanguageRegistry` — builds every `Parser` eagerly in `__init__`. Dict keys must match `LANGUAGE_CONFIG`'s `language` values.
+* Always passed as a DI parameter, never a global — lets tests inject a fake.
 
-  class LanguageRegistry:
-      def __init__(self):
-          self._parsers: dict[str, Parser] = {
-              "python": Parser(Language(tspython.language())),
-              "javascript": Parser(Language(tsjavascript.language())),
-              "typescript": Parser(Language(tstypescript.language_typescript())),
-              "tsx": Parser(Language(tstypescript.language_tsx())),
-              "csharp": Parser(Language(tscsharp.language())),
-          }
+## 1.4 `repository_clone.py` / `repository_parser.py`
 
-      def get_parser(self, language: str) -> Parser:
-          return self._parsers[language]
-  ```
-  All values are the same generic `tree_sitter.Parser` class — each instance just has a different grammar bound to it. No per-language subclasses; language-specific behavior stays entirely in `LANGUAGE_CONFIG`'s node types (§1.2), read by `code_parser.py`, never by `registry.py`.
-  Dict keys must match the `language` values used in `LANGUAGE_CONFIG` (§1.2) — a real cross-module invariant, caught by the §1.7 contract test.
-  Constructed once per pipeline run — any broken or missing grammar fails immediately at that point, not on first use — and passed down explicitly (dependency injection), never a module-level singleton, so tests can substitute a fake registry.
+Full design: `docs/repository_clone.md`.
 
-## 1.4 `repository_clone.py`
+## 1.5 `code_parser.py`
 
-Full design, including the destination layout, pruning strategy, and clone
-depth decision: `docs/repository_clone.md`. Summary: `clone_repository`
-does a full (not shallow) clone into a single fixed `repository_files/`
-directory, wiping and re-cloning fresh on every run; `prune_unwanted_files`
-then deletes everything `repository_parser.py`'s `list_source_files` didn't
-mark as wanted; `get_current_commit_sha` is captured for the future Refresh
-& Sync component.
+Parsing only — no LLM/embedding calls.
 
-## 1.5 `repository_parser.py`
-Returns the filtered file list for ingestion. Decision logic only — no
-disk mutation; `repository_clone.py` (§1.4) executes the deletion.
+* `parse_code_file(read_from: Path, language: str, registry: GrammarRegistry, *, repo_root: Path | None = None) -> ParsedFile` — reads, parses, delegates to `extract_chunks`. Identity baked into `chunk.id` is `read_from.relative_to(repo_root)` if given, else `read_from` — keeps ids stable across re-clones regardless of where the scratch clone lives on disk.
+* `extract_chunks(tree, source, config, path) -> list[Chunk]` — pure. Two passes: containers first, then units at any depth (nested helpers included), `parent_id` set to the nearest enclosing container.
+* `_query_nodes` — tree-sitter `Query`/`QueryCursor`, compiled query cached per `(language, node_types)`.
+* `_nearest_ancestor`, `_make_chunk`, `_extract_imports`.
+* Out of scope here: `enrichment.enrich_chunks(chunks, source, imports)` (LLM calls), `embeddings.embed_chunks(chunks)` (embeds `chunk_retrieval_text`, one `embed_text` call per chunk). Composed by `repository_ingester.py` — §1.8.
 
-* `list_source_files(repo_path: Path) -> list[Path]` — `git ls-files`, filtered through the extension allowlist (`languages.py`), a filename denylist (e.g. `package-lock.json`), and a file-size cutoff.
-* `_passes_size_cutoff(path: Path, max_bytes: int) -> bool`
-* `_is_denied_filename(path: Path) -> bool`
+## 1.6 Testing strategy
 
-## 1.6 `code_parser.py`
-Parsing only — no LLM calls, no embedding calls. Split into a thin file-level orchestrator and a pure, language-agnostic extraction function.
+* `extract_chunks` — parametrized per language, inline snippets. Invariant: `raw_text == source[start_byte:end_byte]`.
+* `LANGUAGE_CONFIG` contract test — canary snippet per extension, catches config/registry typos at commit time.
+* `parse_code_file` — `tmp_path` integration tests: real file, non-UTF-8, empty, unrecognized extension.
+* `registry.py` — cached-instance identity check; fake-registry injection path.
 
-* `parse_code_file(path: Path, language: str, registry: GrammarRegistry) -> list[Chunk]`
-  - Reads the file, gets a `Parser` from `registry`, parses it to a `Tree`, delegates to `extract_chunks` with that language's `LANGUAGE_CONFIG` entry.
-  - `registry` is a parameter, not a global — this is the seam that lets tests inject a fake registry instead of loading real grammars.
+## 1.7 Known limitations / open decisions
 
-* `extract_chunks(tree: Tree, source: bytes, config: LanguageConfig, path: Path) -> list[Chunk]`
-  - **Pure function** — no disk I/O, no grammar loading. Same `(tree, source, config, path)` always produces the same chunks. This is what makes it unit-testable against inline source strings, with no fixture files required.
-  - Two passes, deliberately overlapping:
-    1. Query `container_node_types` → one chunk per container (e.g. each class), `kind="class"`.
-    2. Query `unit_node_types` at any depth → one chunk per function/method, `kind="function"`, with `parent_id` set to the nearest enclosing container chunk's id, or `None` if there isn't one.
-  - A method produces both its own chunk *and* contributes to its parent class's chunk text — intentional duplication, so retrieval works at both class and method granularity.
-  - Files with no classes (only top-level functions) work identically — `parent_id` is simply `None` throughout. No special-casing needed for "files that only have methods in them."
+* JS/TS arrow functions — §1.2.
+* Parse-error policy — what happens when `tree.root_node.has_error`? Undecided.
+* `raw_text` encoding — non-UTF-8 fallback undecided.
+* Oversized chunks — no size/truncation policy yet.
+* Nested closures — resolved: chunked individually regardless of depth.
 
-* `_query_nodes(language: Language, root: Node, node_types: set[str]) -> list[Node]`
-  - Matches via tree-sitter's native `Query`/`QueryCursor` engine : builds a query string of one bare `(node_type) @match` pattern per entry in `node_types`, compiles it once per `(language, node_types)` pair (cached in `_get_query`/`_QUERY_CACHE`), then runs it with `QueryCursor(query).captures(root)`. Measured ~40% faster per call than a manual recursive walk on this repo's own `code_parser.py`; the C-side match loop wins over Python-level `node.children` recursion. A manual-walk version was implemented and benchmarked first and is intentionally not kept — see git history if the comparison needs revisiting.
-* `_nearest_ancestor(node: Node, container_node_types: set[str]) -> Node | None`
-* `_make_chunk(node: Node, source: bytes, path: Path, language: str, kind: str, class_name: str, parent_id: str | None) -> Chunk`
-* `_extract_imports(tree: Tree, source: bytes, config: LanguageConfig) -> list[str]` — driven by an `import_node_types` entry in `LANGUAGE_CONFIG`, not by per-language branches inside this function.
+## 1.8 `repository_ingester.py`
 
-**Explicitly out of scope for this module** — separate modules, separate failure domains:
-* `enrichment.py` — `enrich_chunks(chunks: list[Chunk]) -> list[Chunk]`, populates `context_text` via LLM calls.
-* `embedding.py` — `embed_chunks(chunks: list[Chunk]) -> list[Chunk]`, populates `embedding` via batched embedding calls.
+Component 1 entry point.
 
-Per-file orchestration composes all three: `parse_code_file` → `enrich_chunks` → `embed_chunks` → store.
-
-## 1.7 Testing strategy
-
-* **`extract_chunks`** (core of the test suite) — parametrized across every configured language using small inline source snippets, no fixture files needed. Include one invariant test that holds for every language: `chunk.raw_text == source[chunk.start_byte:chunk.end_byte]`.
-* **`LANGUAGE_CONFIG` contract test** — for every configured extension, parse a small canary snippet containing at least one class and one function, and assert a sane number of chunks come out. Catches config typos (wrong node type name, a `LANGUAGE_CONFIG` language with no matching parser entry in `registry.py`) at commit time instead of in production ingestion.
-* **`parse_code_file`** — integration-style tests using `tmp_path`: a real file on disk, a non-UTF-8 file, an empty file, an unrecognized extension. Kept small since most logic is already covered via `extract_chunks`.
-* **`registry.py`** — test that repeated `get_parser` calls for the same language return the cached instance (identity check); test the injected-fake-registry path used by `parse_code_file`'s error-handling tests.
-* **`repository_parser.py`** — `_passes_size_cutoff` / `_is_denied_filename` get plain unit tests, no filesystem involved. `list_source_files` gets an integration test against a real `git init`'d fixture repo in `tmp_path`, not a mocked `subprocess` — git's actual output format is what needs verifying.
-
-## 1.8 Known limitations / open decisions to resolve before implementation
-
-* **JS/TS arrow functions** — see §1.2. Needs a decision before JS/TS support ships.
-* **Parse-error policy** — what happens when `tree.root_node.has_error` is true (real syntax errors, or a file that only superficially matches its extension)? Skip the file, emit partial chunks, or flag it for review?
-* **`raw_text` encoding** — confirmed as decoded `str`, with an explicit fallback policy needed for files that fail UTF-8 decoding.
-* **Oversized chunks** — a very large function or class can exceed typical embedding context windows. Not urgent, but should be a tracked follow-up rather than a silent truncation discovered in production.
-* **Nested closures** — resolved: nested helper functions are chunked individually regardless of depth, no "nearest chunkable ancestor" restriction.
+* `ingest_repository(github_url: str, registry: GrammarRegistry | None = None, client: QdrantClient | None = None) -> str` — `ensure_collection` → `clone_repository` → prune → for each source file that's code: `parse_code_file` (`repo_root=repo_path`) → `enrich_chunks` → `embed_chunks` → `upsert_chunks` → `delete_repository`. Returns the ingested commit sha. `registry`/`client` injectable for tests.
+* **Gaps**: prose files skipped (`prose_parser.py` doesn't exist); no parse-error handling (one bad file aborts the run — §1.7); commit sha isn't durably stored anywhere a future resync process could read it — see `docs/repository_clone.md`.

@@ -8,14 +8,19 @@ from models import Chunk, ParsedFile, make_chunk_id, make_content_hash
 from registry import GrammarRegistry
 
 
-def parse_code_file(path: Path, language: str, registry: GrammarRegistry) -> ParsedFile:
+def parse_code_file(
+    read_from: Path, language: str, registry: GrammarRegistry, *, repo_root: Path | None = None
+) -> ParsedFile:
     """Read, parse, and chunk a single source file.
 
     Thin file-level orchestrator: all extraction logic lives in the pure
-    `extract_chunks`/`_extract_imports`. Returns `source`/`imports` alongside
-    the chunks.
+    `extract_chunks`/`_extract_imports`.
+
+    `repo_root` is stripped from `read_from` to produce the identity recorded on
+    every chunk. keeps ids stable.
     """
-    source = path.read_bytes()
+    source = read_from.read_bytes()
+    path = read_from.relative_to(repo_root) if repo_root is not None else read_from
     parser = registry.get_parser(language)
     tree = parser.parse(source)
     config = LANGUAGE_CONFIG[path.suffix]
