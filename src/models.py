@@ -1,19 +1,21 @@
 import hashlib
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import PurePath
 from typing import Literal
 
 CHUNK_NAMESPACE = uuid.UUID("d6e5f8c2-4b1a-4e3a-9c7d-8a2b6f0e1d3c")
 
-def make_chunk_id(path: Path, kind: str, class_name: str, symbol_name: str) -> str:
+def make_chunk_id(path: PurePath, kind: str, class_name: str, symbol_name: str) -> str:
     """Derive a chunk's stable, content-independent id.
 
     `uuid5` over (path, kind, class_name, symbol_name) — deterministic, so
     editing a chunk's body never changes its id.
     """
     return str(
-        uuid.uuid5(CHUNK_NAMESPACE, f"{path}{kind}{class_name}{symbol_name}")
+        uuid.uuid5(
+            CHUNK_NAMESPACE, f"{path}{kind}{class_name}{symbol_name}"
+        )
     )
 
 
@@ -40,7 +42,7 @@ class Chunk:
 
     id: str
     content_hash: str
-    path: Path
+    path: PurePath
     language: str
     kind: Literal["class", "function"]
     class_name: str

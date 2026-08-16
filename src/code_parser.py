@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath
 from typing import Literal
 
 from tree_sitter import Language, Node, Query, QueryCursor, Tree
@@ -20,7 +20,8 @@ def parse_code_file(
     every chunk. keeps ids stable.
     """
     source = read_from.read_bytes()
-    path = read_from.relative_to(repo_root) if repo_root is not None else read_from
+    relative = read_from.relative_to(repo_root) if repo_root is not None else read_from
+    path: PurePath = PurePosixPath(relative.as_posix())
     parser = registry.get_parser(language)
     tree = parser.parse(source)
     config = LANGUAGE_CONFIG[path.suffix]
@@ -30,7 +31,7 @@ def parse_code_file(
 
 
 def extract_chunks(
-    tree: Tree, source: bytes, config: LanguageConfig, path: Path
+    tree: Tree, source: bytes, config: LanguageConfig, path: PurePath
 ) -> list[Chunk]:
     """Extract one chunk per container (class) and per unit (function/method).
 
@@ -104,8 +105,7 @@ def _nearest_ancestor(node: Node, container_node_types: set[str]) -> Node | None
 def _node_name(node: Node, source: bytes) -> str:
     """Resolve `node`'s identifier, or "" if it has none.
 
-    Falls back to the enclosing `variable_declarator`'s name for an
-    anonymous-at-the-node-type-level arrow function like
+    Falls back to the enclosing `variable_declarator`'s name for functions like
     `const handleClick = () => {...}`.
     """
     name_node = node.child_by_field_name("name")
@@ -120,18 +120,13 @@ def _node_name(node: Node, source: bytes) -> str:
 def _make_chunk(
     node: Node,
     source: bytes,
-    path: Path,
+    path: PurePath,
     language: str,
     kind: Literal["class", "function"],
     class_name: str,
     parent_id: str | None,
 ) -> Chunk:
-    """Build a `Chunk` from a single tree-sitter node.
-
-    `class_name`/`symbol_name` follow the id-construction table in
-    docs/code_parser.md: a class chunk has `symbol_name == ""`; a
-    top-level function has `class_name == ""`; a method has both.
-    """
+    """Build a `Chunk` from a single tree-sitter node."""
     symbol_name = "" if kind == "class" else _node_name(node, source)
     raw_text = source[node.start_byte : node.end_byte].decode("utf-8")
     return Chunk(
