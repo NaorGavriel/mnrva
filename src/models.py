@@ -50,11 +50,42 @@ class Chunk:
     class_name: str
     symbol_name: str
     raw_text: str
-    start_byte: int
-    end_byte: int
+    start_byte: int | None
+    end_byte: int | None
     parent_id: str | None
     context_text: str | None = None
     embedding: list[float] | None = None
+
+
+def make_chunk(
+    *,
+    path: PurePath,
+    language: str,
+    kind: Literal["class", "function", "section"],
+    class_name: str,
+    symbol_name: str,
+    raw_text: str,
+    start_byte: int | None,
+    end_byte: int | None,
+    parent_id: str | None,
+) -> Chunk:
+    """Build a `Chunk`, deriving its id and content hash from the given identity and body.
+
+    The single construction point for `Chunk`, shared by `code_parser.py` and `prose_parser.py`.
+    """
+    return Chunk(
+        id=make_chunk_id(path, kind, class_name, symbol_name),
+        content_hash=make_content_hash(raw_text),
+        path=path,
+        language=language,
+        kind=kind,
+        class_name=class_name,
+        symbol_name=symbol_name,
+        raw_text=raw_text,
+        start_byte=start_byte,
+        end_byte=end_byte,
+        parent_id=parent_id,
+    )
 
 
 @dataclass

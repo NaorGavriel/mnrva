@@ -1,10 +1,9 @@
 from pathlib import Path, PurePath, PurePosixPath
-from typing import Literal
 
 from tree_sitter import Language, Node, Query, QueryCursor, Tree
 
 from languages import LANGUAGE_CONFIG, LanguageConfig
-from models import Chunk, ParsedFile, make_chunk_id, make_content_hash
+from models import Chunk, ParsedFile, make_chunk
 from registry import GrammarRegistry
 
 
@@ -46,8 +45,16 @@ def extract_chunks(
 
     for node in _query_nodes(language, root, config.container_node_types):
         class_name = _node_name(node, source)
-        chunk = _make_chunk(
-            node, source, path, config.language, "class", class_name, None
+        chunk = make_chunk(
+            path=path,
+            language=config.language,
+            kind="class",
+            class_name=class_name,
+            symbol_name="",
+            raw_text=_node_text(node, source),
+            start_byte=node.start_byte,
+            end_byte=node.end_byte,
+            parent_id=None,
         )
         container_chunk_ids[node.id] = chunk.id
         chunks.append(chunk)
@@ -60,8 +67,17 @@ def extract_chunks(
         else:
             class_name = ""
             parent_id = None
-        chunk = _make_chunk(
-            node, source, path, config.language, "function", class_name, parent_id
+            
+        chunk = make_chunk(
+            path=path,
+            language=config.language,
+            kind="function",
+            class_name=class_name,
+            symbol_name=_node_name(node, source),
+            raw_text=_node_text(node, source),
+            start_byte=node.start_byte,
+            end_byte=node.end_byte,
+            parent_id=parent_id,
         )
         chunks.append(chunk)
 
@@ -114,39 +130,17 @@ def _node_name(node: Node, source: bytes) -> str:
             name_node = node.parent.child_by_field_name("name")
     if name_node is None:
         return ""
-    return source[name_node.start_byte : name_node.end_byte].decode("utf-8")
+    return _node_text(name_node, source)
 
 
-def _make_chunk(
-    node: Node,
-    source: bytes,
-    path: PurePath,
-    language: str,
-    kind: Literal["class", "function"],
-    class_name: str,
-    parent_id: str | None,
-) -> Chunk:
-    """Build a `Chunk` from a single tree-sitter node."""
-    symbol_name = "" if kind == "class" else _node_name(node, source)
-    raw_text = source[node.start_byte : node.end_byte].decode("utf-8")
-    return Chunk(
-        id=make_chunk_id(path, kind, class_name, symbol_name),
-        content_hash=make_content_hash(raw_text),
-        path=path,
-        language=language,
-        kind=kind,
-        class_name=class_name,
-        symbol_name=symbol_name,
-        raw_text=raw_text,
-        start_byte=node.start_byte,
-        end_byte=node.end_byte,
-        parent_id=parent_id,
-    )
+def _node_text(node: Node, source: bytes) -> str:
+    """Decode `node`'s own source span, verbatim."""
+    return source[node.start_byte : node.end_byte].decode("utf-8")
 
 
 def _extract_imports(tree: Tree, source: bytes, config: LanguageConfig) -> list[str]:
     """Return the raw source text of every import statement in the file."""
     return [
-        source[node.start_byte : node.end_byte].decode("utf-8")
+        _node_text(node, source)
         for node in _query_nodes(tree.language, tree.root_node, config.import_node_types)
     ]

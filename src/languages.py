@@ -1,18 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-
-PROSE_EXTENSIONS = {
-    ".md",
-    ".txt",
-    ".rst",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".toml",
-    ".ini",
-    ".cfg",
-}
-
+from prose_parser import _PROSE_FORMATS
 
 @dataclass
 class LanguageConfig:
@@ -75,8 +63,3 @@ def get_language(path: Path) -> str | None:
 def is_code_file(path: Path) -> bool:
     """Whether `path`'s extension is routed to tree-sitter chunking."""
     return path.suffix in LANGUAGE_CONFIG
-
-
-def is_prose_file(path: Path) -> bool:
-    """Whether `path`'s extension is routed to prose/semantic chunking."""
-    return path.suffix in PROSE_EXTENSIONS
