@@ -6,6 +6,9 @@ from embeddings import embed_text
 from enrichment import enrich_chunks
 from languages import LANGUAGE_CONFIG, get_language
 from registry import LanguageRegistry
+from repository_ingester import ingest_repository
+
+TEST_REPO_URL = "https://github.com/NaorGavriel/mnrva-test-repository.git"
 
 
 def test_embedding() -> None:
@@ -91,9 +94,17 @@ def test_enrich_chunks() -> None:
         print(f"context_text={chunk.context_text!r}")
 
 
+def test_ingest_repository() -> None:
+    """Run the full ingester end to end against TEST_REPO_URL: clone, parse,
+    enrich, embed, and upsert every wanted code file into live Qdrant."""
+    commit_sha = ingest_repository(TEST_REPO_URL)
+    print(f"ingested {TEST_REPO_URL} @ {commit_sha}")
+
+
 if __name__ == "__main__":
     #test_embedding()
     #test_db_init()
     #test_extract_chunks_inline()
     #test_parse_code_file()
-    test_enrich_chunks()
+    #test_enrich_chunks()
+    test_ingest_repository()
