@@ -9,12 +9,12 @@ CHUNK_NAMESPACE = uuid.UUID("d6e5f8c2-4b1a-4e3a-9c7d-8a2b6f0e1d3c")
 def make_chunk_id(path: PurePath, kind: str, class_name: str, symbol_name: str) -> str:
     """Derive a chunk's stable, content-independent id.
 
-    `uuid5` over (path, kind, class_name, symbol_name) — deterministic, so
+    `uuid5` over (path, kind, class_name, symbol_name) - deterministic, so
     editing a chunk's body never changes its id.
     """
     return str(
         uuid.uuid5(
-            CHUNK_NAMESPACE, f"{path}{kind}{class_name}{symbol_name}"
+            CHUNK_NAMESPACE, f"{path.as_posix()}{kind}{class_name}{symbol_name}"
         )
     )
 

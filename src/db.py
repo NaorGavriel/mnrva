@@ -34,7 +34,7 @@ def upsert_chunks(client: QdrantClient, collection_name: str, chunks: list[Chunk
                 ),
             },
             payload={
-i don                "file_path": chunk.path.as_posix(),
+                "file_path": chunk.path.as_posix(),
                 "language": chunk.language,
                 "kind": chunk.kind,
                 "class_name": chunk.class_name,
