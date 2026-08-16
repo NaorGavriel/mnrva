@@ -1,0 +1,68 @@
+Notes on chunking strategy for mnrva
+
+This file exists purely as a synthetic fixture for prose_parser_tester.py. It
+is long enough on its own to exceed MAX_CHUNK_CHARS, so parsing it exercises
+the fallback splitter's oversized-section path (_cap_oversized) rather than
+just the single-chunk happy path that a short text file would hit. Padding
+this opening paragraph slightly is the simplest way to clear that threshold
+without resorting to obviously repeated filler text.
+
+Code files get structure-aware chunking for free: tree-sitter hands back an
+AST, and function/class boundaries are unambiguous. Prose files have no such
+grammar. A markdown file has headers, a TOML file has tables, a JSON file has
+keys, but plain free-form text has none of that. The only signal left to
+chunk on is paragraph and sentence boundaries, which is exactly what a
+recursive character splitter is built for: try the largest natural
+separator first, and only fall back to a smaller one if a piece still
+doesn't fit inside the budget.
+
+Bounding the size of a prose chunk matters for the same reason it matters
+for a code chunk: whatever chunk comes out of this stage gets fed into an
+LLM call during context enrichment, alongside the rest of the file for
+grounding. A chunk that runs into the thousands of lines defeats the purpose
+of chunking at all, since the model is back to reasoning over something
+close to the whole document instead of a focused unit. Capping chunk size in
+characters rather than gating on the size of the whole source file is what
+keeps enrichment quality consistent regardless of whether the file being
+ingested is a five-line README or a sprawling changelog.
+
+Overlap between adjacent chunks exists so that a fact split across a chunk
+boundary is not effectively deleted from retrieval. Without overlap, a
+sentence that begins in one chunk and finishes in the next can end up
+under-represented in both: neither chunk contains the whole thought, so a
+query matching on that thought scores lower against either one than it
+would against a single chunk holding it intact. A couple hundred characters
+of overlap is a cheap way to blunt that failure mode without meaningfully
+increasing the number of chunks produced.
+
+Choosing a character budget instead of a token budget is a simplification,
+not a correctness claim. Characters are a reasonable proxy for the cost an
+LLM call pays per chunk, but the ratio of characters to tokens is not fixed:
+dense identifier-heavy text and ordinary prose tokenize differently, and a
+budget tuned against one will be looser or tighter than intended against the
+other. Swapping in a real tokenizer as the length function passed to the
+splitter is a small change if the character-based approximation ever turns
+out to be too imprecise in practice, since the splitting logic itself does
+not care what the length function measures, only that it returns a number
+it can compare against the configured maximum.
+
+Format-aware splitting and size capping are deliberately two separate steps
+rather than one combined pass. The format-aware step decides where the
+natural seams in a document are; the capping step is a safety net that only
+ever engages when a natural section is still too large on its own, whether
+that is a changelog entry that goes on for pages, a single JSON array with
+hundreds of elements, or a config file with one enormous table. Keeping
+these concerns separate means a new prose format can be added later just by
+writing its own boundary-finder, and it inherits the size cap automatically
+without having to reimplement it.
+
+None of this content is meant to be technically authoritative about the
+project; it is filler prose whose only real job is to be long enough, and
+plain enough, to give the generic text splitter something realistic to
+chop up. If this paragraph and the ones above it were not enough on their
+own to cross the size threshold, this closing paragraph pushes the total
+well past it, which is the entire point of the file. Total length matters
+more than any individual paragraph's content here, so this last sentence is
+only present to comfortably clear the size cap rather than to say anything
+new, and the same is true of this second sentence right after it, and of
+this third one closing out the file for good measure.

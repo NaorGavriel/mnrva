@@ -1,0 +1,29 @@
+{
+  "service": {
+    "name": "mnrva",
+    "version": "0.1.0",
+    "description": "RAG system for querying a code repository in natural language"
+  },
+  "languages": [
+    { "extension": ".py", "name": "python" },
+    { "extension": ".ts", "name": "typescript" },
+    { "extension": ".tsx", "name": "tsx" },
+    { "extension": ".js", "name": "javascript" },
+    { "extension": ".jsx", "name": "javascript" }
+  ],
+  "prose_extensions": [
+    ".md", ".txt", ".rst", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg"
+  ],
+  "database": {
+    "vectors": "dense embeddings for semantic search",
+    "sparse_vectors": "BM25 sparse vectors generated natively by Qdrant at upsert time",
+    "payload_fields": {
+      "file_path": "string",
+      "symbol_name": "string",
+      "start_line": "integer",
+      "end_line": "integer",
+      "language": "string",
+      "imports": "array of strings"
+    }
+  }
+}
