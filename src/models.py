@@ -21,6 +21,18 @@ def make_content_hash(raw_text: str) -> str:
     """Fingerprint a chunk's body, used to decide whether refresh needs to re-embed."""
     return hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
+
+def chunk_retrieval_text(chunk: "Chunk") -> str:
+    """The text that represents `chunk` for retrieval: its enrichment context
+    prepended to its raw body.
+
+    Shared by dense embedding and BM25 indexing so both halves of hybrid
+    search see identical content for the same chunk.
+    """
+    if chunk.context_text:
+        return f"{chunk.context_text}\n\n{chunk.raw_text}"
+    return chunk.raw_text
+
 @dataclass
 class Chunk:
     """A function/class/method-level unit of source code, plus its
