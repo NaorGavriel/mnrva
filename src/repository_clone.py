@@ -1,4 +1,6 @@
+import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -7,12 +9,25 @@ class CloneError(RuntimeError):
     """Raised when `git clone` fails - bad URL, network failure, or a private repo needing auth."""
 
 
+def _rmtree(path: Path) -> None:
+    """Delete a directory tree, clearing read-only attributes on failure and retrying.
+
+    Git creates read-only files , which `shutil.rmtree` can't delete on Windows.
+    """
+
+    def _on_error(func, path, exc_info) -> None:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    shutil.rmtree(path, onexc=_on_error)
+
+
 def clone_repository(github_url: str, dest_dir: Path) -> Path:
     """Clone `github_url` into `dest_dir`, wiping any existing directory there first.
     Any URL `git clone` accepts works.
     """
     if dest_dir.exists():
-        shutil.rmtree(dest_dir)
+        _rmtree(dest_dir)
     try:
         subprocess.run(
             ["git", "clone", "--depth=1", github_url, str(dest_dir)],
@@ -61,7 +76,7 @@ def delete_repository(repo_path: Path) -> None:
     Meant to be called by the orchestrator only after that run's chunks
     have been successfully embedded and upserted into Qdrant.
     """
-    shutil.rmtree(repo_path)
+    _rmtree(repo_path)
 
 
 def _prune_empty_directories(repo_path: Path) -> None:
