@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import PurePath
 from typing import Literal
 
+
 CHUNK_NAMESPACE = uuid.UUID("d6e5f8c2-4b1a-4e3a-9c7d-8a2b6f0e1d3c")
 
 def make_chunk_id(path: PurePath, kind: str, class_name: str, symbol_name: str) -> str:
@@ -37,14 +38,15 @@ def chunk_retrieval_text(chunk: "Chunk") -> str:
 
 @dataclass
 class Chunk:
-    """A function/class/method-level unit of source code, plus its
-    downstream enrichment and embedding once those stages have run."""
+    """A function/class/method-level unit of source code, or a section of a
+    prose file, plus its downstream enrichment and embedding once those
+    stages have run."""
 
     id: str
     content_hash: str
     path: PurePath
     language: str
-    kind: Literal["class", "function"]
+    kind: Literal["class", "function", "section"]
     class_name: str
     symbol_name: str
     raw_text: str
