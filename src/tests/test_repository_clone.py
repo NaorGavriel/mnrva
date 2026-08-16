@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from repository_clone import CloneError, clone_repository
+from repository_clone import CloneError, clone_repository, prune_unwanted_files
 
 REMOTE_REPO_URL = "https://github.com/NaorGavriel/book-select.git"
 
@@ -72,3 +72,68 @@ def test_clone_repository_against_real_remote(tmp_path: Path) -> None:
     assert result == dest_dir
     assert (dest_dir / ".git").is_dir()
     assert any(dest_dir.iterdir())
+
+
+def test_prune_unwanted_files_deletes_only_the_given_paths(tmp_path: Path) -> None:
+    """Only the paths passed in are removed; everything else on disk is untouched."""
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / "keep.py").write_text("kept\n")
+    (repo_path / "remove.json").write_text("{}\n")
+
+    removed = prune_unwanted_files(repo_path, [Path("remove.json")])
+
+    assert removed == [Path("remove.json")]
+    assert not (repo_path / "remove.json").exists()
+    assert (repo_path / "keep.py").exists()
+
+
+def test_prune_unwanted_files_removes_now_empty_directories(tmp_path: Path) -> None:
+    """A directory left empty after its only file is pruned gets removed too."""
+    repo_path = tmp_path / "repo"
+    nested_dir = repo_path / "nested"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "remove.json").write_text("{}\n")
+    (repo_path / "keep.py").write_text("kept\n")
+
+    prune_unwanted_files(repo_path, [Path("nested/remove.json")])
+
+    assert not nested_dir.exists()
+    assert (repo_path / "keep.py").exists()
+
+
+def test_prune_unwanted_files_keeps_non_empty_directories(tmp_path: Path) -> None:
+    """A directory with a surviving file is left in place after pruning."""
+    repo_path = tmp_path / "repo"
+    nested_dir = repo_path / "nested"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "remove.json").write_text("{}\n")
+    (nested_dir / "keep.py").write_text("kept\n")
+
+    prune_unwanted_files(repo_path, [Path("nested/remove.json")])
+
+    assert nested_dir.exists()
+    assert (nested_dir / "keep.py").exists()
+
+
+def test_prune_unwanted_files_never_touches_git_directory(tmp_path: Path) -> None:
+    """.git/ is left alone even if it's (incorrectly) passed as unwanted."""
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    (git_dir / "config").write_text("fake git config\n")
+
+    removed = prune_unwanted_files(repo_path, [Path(".git/config")])
+
+    assert removed == []
+    assert (git_dir / "config").exists()
+
+
+def test_prune_unwanted_files_ignores_paths_that_dont_exist(tmp_path: Path) -> None:
+    """A path that's already gone (e.g. a stale entry) is skipped, not an error."""
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+
+    removed = prune_unwanted_files(repo_path, [Path("does_not_exist.py")])
+
+    assert removed == []

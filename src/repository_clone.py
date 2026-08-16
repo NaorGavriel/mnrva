@@ -39,10 +39,14 @@ def get_current_commit_sha(repo_path: Path) -> str:
 
 def prune_unwanted_files(repo_path: Path, unwanted_files: list[Path]) -> list[Path]:
     """Delete every path in `unwanted_files` from `repo_path`.
-    `.git/` is never touched.
+
+    Paths under `.git/` are always skipped, even if given — a defensive
+    guard against a caller passing something it shouldn't.
     """
     removed = []
     for path in unwanted_files:
+        if ".git" in path.parts:
+            continue
         full_path = repo_path / path
         if full_path.exists():
             full_path.unlink()

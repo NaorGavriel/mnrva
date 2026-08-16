@@ -81,7 +81,9 @@ component 1's entry point, not yet built).
     empty by the deletions.
   - Returns the paths actually removed — useful for logging and for tests
     to assert on.
-  - Never touches `.git/`.
+  - Never touches `.git/` — any path under it is skipped even if passed in,
+    a defensive guard rather than reliance on `list_unwanted_files` never
+    producing one.
 
 * `CloneError(RuntimeError)` — raised by `clone_repository` on any git
   failure, message includes the captured stderr.
