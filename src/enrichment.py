@@ -1,4 +1,3 @@
-import dataclasses
 import os
 
 from dotenv import load_dotenv
@@ -28,18 +27,15 @@ only the context and nothing else."""
 
 
 def enrich_chunks(chunks: list[Chunk], source: str, imports: list[str]) -> list[Chunk]:
-    """Populate `context_text` on every chunk from one file via one LLM call per chunk.
+    """Populate `context_text` on every chunk from one file in place, via one LLM call per chunk.
 
     `chunks` must all belong to the same file — `source`/`imports` are
     shared across the whole batch.
     """
     imports_block = "\n".join(imports)
-    return [
-        dataclasses.replace(
-            chunk, context_text=_generate_context(chunk, source, imports_block)
-        )
-        for chunk in chunks
-    ]
+    for chunk in chunks:
+        chunk.context_text = _generate_context(chunk, source, imports_block)
+    return chunks
 
 
 def _generate_context(chunk: Chunk, source: str, imports_block: str) -> str:

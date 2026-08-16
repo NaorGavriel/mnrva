@@ -1,4 +1,3 @@
-import dataclasses
 import os
 
 from dotenv import load_dotenv
@@ -19,8 +18,7 @@ def embed_text(text: str) -> list[float]:
 
 
 def embed_chunks(chunks: list[Chunk]) -> list[Chunk]:
-    """Populate `embedding` on every chunk, one `embed_text` call each."""
-    return [
-        dataclasses.replace(chunk, embedding=embed_text(chunk_retrieval_text(chunk)))
-        for chunk in chunks
-    ]
+    """Populate `embedding` on every chunk in place, one `embed_text` call each."""
+    for chunk in chunks:
+        chunk.embedding = embed_text(chunk_retrieval_text(chunk))
+    return chunks
