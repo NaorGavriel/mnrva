@@ -48,6 +48,9 @@ Parsing only — no LLM/embedding calls.
 * `raw_text` encoding — non-UTF-8 fallback undecided.
 * Oversized chunks — no size/truncation policy yet.
 * Nested closures — resolved: chunked individually regardless of depth.
+* **Enrichment/embedding throughput** — `enrich_chunks`/`embed_chunks` each make one sequential, unbatched API call per chunk (confirmed: ~127 chunks took several minutes end to end, dominated by `enrich_chunks`'s chat-completion calls). Not fixed yet; candidate optimizations, roughly in order of expected impact:
+  - Parallelize both via a thread pool (`concurrent.futures.ThreadPoolExecutor`) — I/O-bound calls, no change to what's sent per call.
+  - Batch `embed_chunks` — OpenAI's embeddings endpoint accepts a list of inputs in one request; currently one `embed_text` call per chunk.
 
 ## 1.8 `repository_ingester.py`
 
