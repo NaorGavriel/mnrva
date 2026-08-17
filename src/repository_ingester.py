@@ -29,7 +29,7 @@ def ingest_repository(
 
     Returns the commit sha that was ingested. Deletes the local scratch
     clone (`repository_files/`) on success; leaves it on disk if anything
-    raises, so a broken run can be inspected.
+    raises.
     """
     registry = registry or LanguageRegistry()
     client = client or init_client(url=QDRANT_URL)
@@ -42,6 +42,7 @@ def ingest_repository(
 
     commit_sha = get_current_commit_sha(repo_path)
 
+    total_chunks = 0
     for relative_path in list_source_files(repo_path):
         if is_code_file(relative_path):
             language = get_language(relative_path)
@@ -54,6 +55,8 @@ def ingest_repository(
         enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
         embedded = embed_chunks(enriched)
         upsert_chunks(client, COLLECTION_NAME, embedded)
+        total_chunks += len(embedded)
 
     delete_repository(repo_path)
+    print(f"upserted {total_chunks} chunks from {github_url} @ {commit_sha}")
     return commit_sha

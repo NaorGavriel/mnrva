@@ -97,8 +97,7 @@ def test_enrich_chunks() -> None:
 def test_ingest_repository() -> None:
     """Run the full ingester end to end against TEST_REPO_URL: clone, parse,
     enrich, embed, and upsert every wanted code file into live Qdrant."""
-    commit_sha = ingest_repository(TEST_REPO_URL)
-    print(f"ingested {TEST_REPO_URL} @ {commit_sha}")
+    ingest_repository(TEST_REPO_URL)
 
 
 if __name__ == "__main__":
