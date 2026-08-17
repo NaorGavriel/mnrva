@@ -46,9 +46,11 @@ def ingest_repository(
         if is_code_file(relative_path):
             language = get_language(relative_path)
             parsed = parse_code_file(repo_path / relative_path, language, registry, repo_root=repo_path)
-        if is_prose_file(relative_path):
+        elif is_prose_file(relative_path):
             parsed = parse_prose_file(repo_path / relative_path, repo_root=repo_path)
-        
+        else:
+            continue  # allowlisted but unroutable: neither a code nor prose extension
+
         enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
         embedded = embed_chunks(enriched)
         upsert_chunks(client, COLLECTION_NAME, embedded)
