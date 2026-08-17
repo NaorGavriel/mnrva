@@ -191,6 +191,8 @@ _PROSE_FORMATS: dict[str, _ProseFormat] = {
     ".txt": ("text", _split_text),
 }
 
+PROSE_EXTENSIONS = _PROSE_FORMATS.keys()
+
 def is_prose_file(path: Path) -> bool:
     """Whether `path`'s extension is routed to prose/semantic chunking."""
     return path.suffix in _PROSE_FORMATS.keys()

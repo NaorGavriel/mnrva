@@ -1,7 +1,8 @@
 import subprocess
 from pathlib import Path
 
-from languages import LANGUAGE_CONFIG, PROSE_EXTENSIONS
+from languages import LANGUAGE_CONFIG
+from prose_parser import PROSE_EXTENSIONS
 
 DENIED_FILENAMES = {
     "package-lock.json",
