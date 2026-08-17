@@ -45,6 +45,8 @@ def extract_chunks(
 
     for node in _query_nodes(language, root, config.container_node_types):
         class_name = _node_name(node, source)
+        if not class_name:
+            continue  # e.g. an anonymous default-exported class - no stable identity to chunk on
         chunk = make_chunk(
             path=path,
             language=config.language,
@@ -60,6 +62,12 @@ def extract_chunks(
         chunks.append(chunk)
 
     for node in _query_nodes(language, root, config.unit_node_types):
+        # A node with an unresolvable name (e.g. an inline/anonymous arrow-function callback)
+        # is skipped because it causes chunk id collisions.
+        symbol_name = _node_name(node, source)
+        if not symbol_name:
+            continue
+
         ancestor = _nearest_ancestor(node, config.container_node_types)
         if ancestor is not None:
             class_name = _node_name(ancestor, source)
@@ -67,13 +75,13 @@ def extract_chunks(
         else:
             class_name = ""
             parent_id = None
-            
+
         chunk = make_chunk(
             path=path,
             language=config.language,
             kind="function",
             class_name=class_name,
-            symbol_name=_node_name(node, source),
+            symbol_name=symbol_name,
             raw_text=_node_text(node, source),
             start_byte=node.start_byte,
             end_byte=node.end_byte,

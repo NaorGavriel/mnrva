@@ -1,12 +1,17 @@
+from collections import defaultdict
 from pathlib import Path
 
 import db
 from code_parser import extract_chunks, parse_code_file
 from embeddings import embed_text
 from enrichment import enrich_chunks
-from languages import LANGUAGE_CONFIG, get_language
+from languages import LANGUAGE_CONFIG, get_language, is_code_file
+from models import Chunk
+from prose_parser import is_prose_file, parse_prose_file
 from registry import LanguageRegistry
-from repository_ingester import ingest_repository
+from repository_clone import clone_repository, delete_repository
+from repository_ingester import REPOSITORY_FILES_DIR, ingest_repository
+from repository_parser import list_source_files
 
 TEST_REPO_URL = "https://github.com/NaorGavriel/mnrva-test-repository.git"
 
@@ -100,6 +105,40 @@ def test_ingest_repository() -> None:
     ingest_repository(TEST_REPO_URL)
 
 
+def test_find_chunk_id_collisions() -> None:
+    """Parse every wanted file in TEST_REPO_URL (no enrichment/embedding/Qdrant)
+    and report any chunks whose id collides, to debug an upserted-count vs
+    collection-point-count mismatch without spending API calls."""
+    registry = LanguageRegistry()
+    repo_path = clone_repository(TEST_REPO_URL, REPOSITORY_FILES_DIR)
+
+    by_id: dict[str, list[Chunk]] = defaultdict(list)
+    for relative_path in list_source_files(repo_path):
+        if is_code_file(relative_path):
+            language = get_language(relative_path)
+            parsed = parse_code_file(repo_path / relative_path, language, registry, repo_root=repo_path)
+        elif is_prose_file(relative_path):
+            parsed = parse_prose_file(repo_path / relative_path, repo_root=repo_path)
+        else:
+            continue
+        for chunk in parsed.chunks:
+            by_id[chunk.id].append(chunk)
+
+    delete_repository(repo_path)
+
+    total = sum(len(chunks) for chunks in by_id.values())
+    print(f"parsed {total} chunks total, {len(by_id)} unique ids")
+    for id_, chunks in by_id.items():
+        if len(chunks) == 1:
+            continue
+        print(f"\ncollision on id={id_}:")
+        for chunk in chunks:
+            print(
+                f"  path={chunk.path} kind={chunk.kind} "
+                f"class_name={chunk.class_name!r} symbol_name={chunk.symbol_name!r}"
+            )
+
+
 if __name__ == "__main__":
     #test_embedding()
     #test_db_init()
@@ -107,3 +146,4 @@ if __name__ == "__main__":
     #test_parse_code_file()
     #test_enrich_chunks()
     test_ingest_repository()
+    #test_find_chunk_id_collisions()
