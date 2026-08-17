@@ -1,11 +1,11 @@
 Notes on chunking strategy for mnrva
 
-This file exists purely as a synthetic fixture for prose_parser_tester.py. It
-is long enough on its own to exceed MAX_CHUNK_CHARS, so parsing it exercises
-the fallback splitter's oversized-section path (_cap_oversized) rather than
-just the single-chunk happy path that a short text file would hit. Padding
-this opening paragraph slightly is the simplest way to clear that threshold
-without resorting to obviously repeated filler text.
+This file exists purely as a synthetic fixture for test_prose_parser_examples.py.
+It is long enough on its own to exceed MAX_CHUNK_CHARS, so parsing it exercises
+_split_text's own fallback-splitter path producing multiple "part-N" chunks,
+rather than just the single-chunk happy path that a short text file would hit.
+Padding this opening paragraph slightly is the simplest way to clear that
+threshold without resorting to obviously repeated filler text.
 
 Code files get structure-aware chunking for free: tree-sitter hands back an
 AST, and function/class boundaries are unambiguous. Prose files have no such

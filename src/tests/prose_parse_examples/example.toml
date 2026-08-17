@@ -30,12 +30,12 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 
-# grid is a matrix of coordinate pairs; formatted one row per line so the
-# trailing element ends up alone on its own line, no trailing comma.
+# grid is a matrix of coordinate pairs, one row per line. Every row keeps a
+# trailing comma so no row is byte-for-byte a standalone [section] header.
 [tool.some_plugin]
 grid = [
     ["a", "b"],
-    ["c", "d"]
+    ["c", "d"],
 ]
 
 # [[...]] (double brackets) is TOML's array-of-tables syntax: each repeated
