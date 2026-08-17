@@ -7,6 +7,7 @@ from db import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_client, upse
 from embeddings import embed_chunks
 from enrichment import enrich_chunks
 from languages import get_language, is_code_file
+from prose_parser import is_prose_file, parse_prose_file
 from registry import GrammarRegistry, LanguageRegistry
 from repository_clone import (
     clone_repository,
@@ -24,13 +25,11 @@ def ingest_repository(
     registry: GrammarRegistry | None = None,
     client: QdrantClient | None = None,
 ) -> str:
-    """Clone `github_url`, chunk/enrich/embed every wanted code file, and upsert into Qdrant.
+    """Clone `github_url`, chunk/enrich/embed every wanted code and prose file, and upsert into Qdrant.
 
     Returns the commit sha that was ingested. Deletes the local scratch
     clone (`repository_files/`) on success; leaves it on disk if anything
     raises, so a broken run can be inspected.
-
-    Prose files (README, config, etc.) are skipped for now.
     """
     registry = registry or LanguageRegistry()
     client = client or init_client(url=QDRANT_URL)
@@ -44,13 +43,12 @@ def ingest_repository(
     commit_sha = get_current_commit_sha(repo_path)
 
     for relative_path in list_source_files(repo_path):
-        if not is_code_file(relative_path):
-            continue  # prose files: no parser yet, skip for now
-
-        language = get_language(relative_path)
-        parsed = parse_code_file(
-            repo_path / relative_path, language, registry, repo_root=repo_path
-        )
+        if is_code_file(relative_path):
+            language = get_language(relative_path)
+            parsed = parse_code_file(repo_path / relative_path, language, registry, repo_root=repo_path)
+        if is_prose_file(relative_path):
+            parsed = parse_prose_file(repo_path / relative_path, repo_root=repo_path)
+        
         enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
         embedded = embed_chunks(enriched)
         upsert_chunks(client, COLLECTION_NAME, embedded)
