@@ -19,8 +19,8 @@ there.
 - Python
 - LangChain — agent/tool orchestration
 - tree-sitter — AST-aware chunking, one grammar per language
-- Qdrant — single store for vectors, BM25 sparse vectors, and payload
-  metadata.
+- Qdrant — vectors, BM25 sparse vectors, and chunk payload metadata.
+- PostgreSQL — conversation state (query agent) and repo/commit metadata.
 
 ## Decisions to honor, not re-derive
 
@@ -40,6 +40,8 @@ there.
   logic elsewhere.
 - File discovery: `git ls-files`, filtered by an extension allowlist (not
   a blocklist) plus a small filename denylist for lockfiles.
+- Conversation state uses LangGraph's Postgres checkpointer.
+- Repo metadata (`github_url`, `commit_sha`) lives in Postgres, kept current by the refresh pipeline. The query agent compares its local clone's sha against it at conversation start and re-clones on mismatch.
 
 ## Module layout (Component 1)
 

@@ -36,6 +36,9 @@ UUID (via `uuid5`). Qdrant only accepts 64-bit unsigned integers or UUIDs as poi
 Non-code files (README, config files, docs) follow a separate path: chunked
 by semantic-similarity.
 
+Ingestion also seeds the repo's `github_url`/`commit_sha` into Postgres
+(§3.5) — the record the refresh pipeline updates and the query agent reads.
+
 ### 2.2 Query Agent
 
 Handles developer-facing natural language queries against the index.
@@ -54,6 +57,11 @@ Given a query, the agent chooses between retrieval tools:
 Cross-file context is handled by the agent's own tool loop — reading a
 file, noticing an import, and opening the imported file directly.
 
+Conversation state persists in Postgres (§3.5) via LangGraph's checkpointer,
+keyed by a per-conversation `thread_id`. The agent keeps one local repo
+clone, refreshed by comparing its checked-out commit sha against Postgres
+at conversation start. Full design: `docs/query_agent.md`.
+
 ### 2.3 Refresh & Sync Pipeline
 
 Keeps the index consistent as the codebase changes. A deterministic sync job.
@@ -67,6 +75,9 @@ Because chunk IDs are deterministic (file path + symbol name), this is a
 straightforward delete-and-replace.
 
 Rename detection is out of scope for MVP. Renames are treated as delete+add.
+
+On success, the pipeline updates `commit_sha` in Postgres (§3.5) so the
+query agent knows to refresh its clone.
 
 ## 3. System Architecture
 
@@ -96,9 +107,9 @@ Each language has its own node-type query, maintained as a small per-language co
 A `language` field is stored in chunk metadata, enabling language-scoped
 filtering or boosting at query time.
 
-### 3.4 Database
+### 3.4 Vector store
 
-**Qdrant.** A single store covers every data need in MVP scope.
+**Qdrant** covers every embedding-adjacent need.
 
 - **Vectors** — dense embeddings for semantic search.
 - **Sparse vectors** — Qdrant generates BM25 sparse vectors natively for the lexical half of hybrid search.
@@ -110,3 +121,8 @@ filtering or boosting at query time.
 
 **Practical constraint:** Qdrant point IDs must be 64-bit unsigned integers
 or UUIDs.
+
+### 3.5 Conversation & repo-state store
+
+**PostgreSQL** holds everything that isn't a vector: LangGraph conversation
+checkpoints and repo metadata (`github_url`, `commit_sha`). Full design: `docs/query_agent.md`.
