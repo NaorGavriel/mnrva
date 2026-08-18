@@ -1,7 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
 
-import db
+import db_qdrant
 from code_parser import extract_chunks, parse_code_file
 from embeddings import embed_text
 from enrichment import enrich_chunks
@@ -24,10 +24,10 @@ def test_embedding() -> None:
 
 
 def test_db_init() -> None:
-    """Smoke-test db.init_client/ensure_collection against a live Qdrant instance."""
-    client = db.init_client(url=db.QDRANT_URL)
-    db.ensure_collection(client, db.COLLECTION_NAME)
-    print(f"collection '{db.COLLECTION_NAME}' ready at {db.QDRANT_URL}")
+    """Smoke-test db_qdrant.init_client/ensure_collection against a live Qdrant instance."""
+    client = db_qdrant.init_client(url=db_qdrant.QDRANT_URL)
+    db_qdrant.ensure_collection(client, db_qdrant.COLLECTION_NAME)
+    print(f"collection '{db_qdrant.COLLECTION_NAME}' ready at {db_qdrant.QDRANT_URL}")
 
 
 def test_extract_chunks_inline() -> None:

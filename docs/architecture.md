@@ -58,9 +58,10 @@ Cross-file context is handled by the agent's own tool loop — reading a
 file, noticing an import, and opening the imported file directly.
 
 Conversation state persists in Postgres (§3.5) via LangGraph's checkpointer,
-keyed by a per-conversation `thread_id`. The agent keeps one local repo
-clone, refreshed by comparing its checked-out commit sha against Postgres
-at conversation start. Full design: `docs/query_agent.md`.
+keyed by a per-conversation `thread_id`. Each agent process keeps its own
+local repo clone, refreshed by comparing its checked-out commit sha
+against Postgres at conversation start — independent of any other process
+running the agent. Full design: `docs/query_agent.md`.
 
 ### 2.3 Refresh & Sync Pipeline
 
@@ -76,8 +77,7 @@ straightforward delete-and-replace.
 
 Rename detection is out of scope for MVP. Renames are treated as delete+add.
 
-On success, the pipeline updates `commit_sha` in Postgres (§3.5) so the
-query agent knows to refresh its clone.
+On success, the pipeline updates `commit_sha` in Postgres.
 
 ## 3. System Architecture
 
@@ -125,4 +125,5 @@ or UUIDs.
 ### 3.5 Conversation & repo-state store
 
 **PostgreSQL** holds everything that isn't a vector: LangGraph conversation
-checkpoints and repo metadata (`github_url`, `commit_sha`). Full design: `docs/query_agent.md`.
+checkpoints and repo metadata (`github_url`, `commit_sha`). Full design:
+`docs/query_agent.md`.

@@ -2,7 +2,8 @@ from pathlib import PurePosixPath
 
 from qdrant_client import models as qdrant_models
 
-from db import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME, upsert_chunks
+from chunks import upsert_chunks
+from db_qdrant import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from models import Chunk, chunk_retrieval_text
 
 

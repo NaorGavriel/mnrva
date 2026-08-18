@@ -35,19 +35,24 @@ there.
   precomputed graph.
 - Non-code files (`.md`, `.txt`, config) are chunked via prose/semantic
   splitting, never tree-sitter.
-- `db.init_client()` takes either `path=` (local dev) or `url=`
+- `db_qdrant.init_client()` takes either `path=` (local dev) or `url=`
   (CI/production, e.g. Qdrant Cloud) — same function, don't branch this
   logic elsewhere.
 - File discovery: `git ls-files`, filtered by an extension allowlist (not
   a blocklist) plus a small filename denylist for lockfiles.
 - Conversation state uses LangGraph's Postgres checkpointer.
-- Repo metadata (`github_url`, `commit_sha`) lives in Postgres, kept current by the refresh pipeline. The query agent compares its local clone's sha against it at conversation start and re-clones on mismatch.
+- Repo metadata (`github_url`, `commit_sha`) lives in Postgres, kept current by the refresh pipeline. Each query-agent process maintains its own local clone, refreshed by comparing its checked-out commit sha against Postgres at conversation start.
 
 ## Module layout (Component 1)
 
 `models.py`, `languages.py`, `repository_clone.py`, `repository_parser.py`,
 `tree_parser.py`, `prose_parser.py`, `context_enricher.py`, `embeddings.py`,
-`db.py`, `repository_ingester.py`
+`db_qdrant.py`, `chunks.py`, `repository_ingester.py`
+
+`db_qdrant.py` owns the Qdrant client/collection setup; `chunks.py` holds
+chunk-level operations (upsert, search) that use it. Postgres will follow
+the same split later: `db_postgres.py` for connection/table setup,
+`repo_metadata.py`/`agent_messages.py` for the operations that use it.
 
 `Chunk` (in `models.py`) is the one data contract shared across all of
 these — don't introduce a parallel shape.

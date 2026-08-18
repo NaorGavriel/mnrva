@@ -2,8 +2,9 @@ from pathlib import Path
 
 from qdrant_client import QdrantClient
 
+from chunks import upsert_chunks
 from code_parser import parse_code_file
-from db import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_client, upsert_chunks
+from db_qdrant import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_client
 from embeddings import embed_chunks
 from enrichment import enrich_chunks
 from languages import get_language, is_code_file
