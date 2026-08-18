@@ -59,9 +59,8 @@ these — don't introduce a parallel shape.
 
 ## Assistant rules
 
-- Never run code (no executing scripts, no `python -c`, no invoking test
-  suites or the app). Only edit and create source files.
-- Never edit `.env`. If a new environment variable is needed, tell the user.
+See `RULES.md` for guardrails (execution, network, secrets, destructive
+actions, scope discipline).
 
 ## Conventions
 
