@@ -95,6 +95,8 @@ def test_upsert_chunks_builds_payload_from_chunk_fields() -> None:
         end_byte=40,
         parent_id="parent-id",
         content_hash="abc123",
+        raw_text="def greet_method(): pass",
+        context_text='a method that greets'
     )
 
     upsert_chunks(client, "code_chunks", [chunk])
@@ -110,6 +112,8 @@ def test_upsert_chunks_builds_payload_from_chunk_fields() -> None:
         "end_byte": 40,
         "parent_id": "parent-id",
         "content_hash": "abc123",
+        "raw_text":"def greet_method(): pass",
+        "context_text":'a method that greets',
     }
 
 
