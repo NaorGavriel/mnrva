@@ -7,7 +7,7 @@ Scope: single repo per Qdrant collection, multi-turn conversation, multiple tool
 
 ## 2.1 Required tools
 
-All three are bound to the agent node; the agent decides which to call.
+All four are bound to the agent node; the agent decides which to call.
 
 - **`hybrid_search_tool(query: str, top_k: int = 10, language: str | None = None, kind: str | None = None)`**
   Wraps a new `chunks.search_chunks(client, collection_name, query_text, top_k, language=None, kind=None)`.
@@ -24,6 +24,12 @@ All three are bound to the agent node; the agent decides which to call.
 - **`grep_search_tool(pattern: str, file_glob: str | None = None)`**
   `git grep -n --fixed-strings` inside the clone.
   One mechanism for both identifier lookups and error-string lookups.
+
+- **`submit_answer(answer: str, evidence: list[Citation])`** — how the agent
+  finishes a turn; there's no free-text final message. `Citation` =
+  `{file_path, start_line, end_line}`. `evidence` is required and
+  non-empty: the agent can't submit a claim with no cited source. One tool
+  call per turn, same as the other three.
 
 ## 2.2 New `chunks.py` surface
 - `search_chunks(...)` — §2.1, new.
@@ -75,53 +81,72 @@ connection — most of the actual logic is the library's.
 ```
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
-    retrieval_grade: Literal["relevant", "irrelevant"] | None
-    rewrite_count: int
+    answer_grade: Literal["good", "bad"] | None
+    evaluation_reasoning: str | None
+    retry_count: int
 ```
+
+`evaluate_answer` (§2.5) reads the draft answer/evidence straight off the
+most recent `submit_answer` tool call in `messages`, and the
+hybrid-search-required gate scans `messages` the same way — neither is
+duplicated into its own state field.
 
 ## 2.5 Graph nodes
 
 ```
-START → sync_clone → agent ─(no tool calls)→ END
-                        │
-                 (tool calls present)
-                        ▼
-                      tools ──(last call wasn't hybrid_search)──→ agent
-                        │
-              (last call was hybrid_search)
-                        ▼
-                 grade_retrieval ─(relevant)→ agent
-                        │
-               (irrelevant, rewrite_count < MAX)
-                        ▼
-                  rewrite_query → tools (re-runs hybrid_search)
-                        │
-               (irrelevant, rewrite_count == MAX)
-                        ▼
-                       agent   (proceeds with a low-confidence note)
+START → sync_clone → agent → tools ─(hybrid_search / read_file / grep)──→ agent
+                                │
+                          (submit_answer)
+                                ▼
+                    [gate: hybrid_search called
+                     since the last HumanMessage?]
+                          │           │
+                         no          yes
+                          │           ▼
+                          │     evaluate_answer ─(good)→ END
+                          │           │
+                          │   (bad, retry_count < MAX)
+                          │           ▼
+                          └──────→  agent    (loop; evaluator's reasoning
+                                              injected as context)
+                                    │
+                          (bad, retry_count == MAX)
+                                    ▼
+                                   END   (answer stands, low-confidence note)
 ```
 
 - **`sync_clone`** — not an LLM call; runs the check from §2.3.
-- **`agent`** — LLM node (`AGENT_MODEL` env var, §2.7), bound to all three
-  tools. Calls a tool or emits the final answer.
+- **`agent`** — LLM node (`AGENT_MODEL` env var, §2.7), bound to all four
+  tools, one call per turn. Free to call `hybrid_search_tool`/
+  `whole_file_read_tool`/`grep_search_tool` in any order and combination;
+  finishes only by calling `submit_answer`. System prompt guides it on
+  question intent (implementation / architecture / heuristics / a
+  specific symbol / workflow) to help pick a tool — guidance only for
+  now, not a structured decision.
 - **`tools`** — `ToolNode` executing whatever the agent requested.
-- **`grade_retrieval`** — LLM node, runs only after a `hybrid_search_tool`
-  call. Judges whether the hits are relevant to the query that produced
-  them.
-- **`rewrite_query`** — LLM node, runs when grading fails and
-  `rewrite_count < MAX_REWRITES` (§2.7). Rewrites/expands the query,
-  re-invokes `hybrid_search_tool`. Once the budget is spent, control falls
-  through to `agent`, which decides whether to try another tool or answer
-  with a caveat - the graph never hard-fails on a bad retrieval.
+- **hybrid-search gate** — not an LLM call. Runs only after a
+  `submit_answer` call; checks whether `hybrid_search_tool` was called
+  since the most recent `HumanMessage`. If not, routes back to `agent`
+  with an injected instruction to search before submitting — a
+  code-enforced precondition, not a prompted one.
+- **`evaluate_answer`** — LLM node, runs once the gate passes. Grades the
+  submitted answer against the *user's original question* (not the
+  retrieved chunks against the search query): `"good"` or `"bad"` plus
+  reasoning on what the answer is missing when bad.
+
+Once `retry_count` hits `MAX_RETRIES`, control still returns to `agent`
+for one more pass, then ends — the graph never hard-fails on a bad
+evaluation.
 
 ## 2.6 Life-cycle
 
 1. Caller starts a conversation with some `thread_id`, against some
    already-running agent process.
 2. `sync_clone` runs (§2.3) — cheap after the first turn.
-3. `agent` reasons over the query, looping through `tools`/
-   `grade_retrieval`/`rewrite_query` until it emits an answer.
-4. Postgres checkpoints `messages`/`retrieval_grade`/`rewrite_count` under
+3. `agent` reasons over the query, looping through `tools` and
+   `evaluate_answer` until it submits an answer that passes grading (or
+   the retry budget runs out).
+4. Postgres checkpoints `messages`/`answer_grade`/`retry_count` under
    `thread_id` — visible to any process handling a follow-up on that
    `thread_id`, not just the one that handled turn 1.
 5. Follow-up turn, possibly on a different process: prior `messages`
@@ -134,9 +159,9 @@ long-lived, not tied to any one conversation.
 ## 2.7 Constraints
 
 - **Single repo per collection** — no `repo` filter on any tool.
-- **`rewrite_count` cap** = 2.
+- **`retry_count` cap** = 2.
 - **LangGraph `recursion_limit`** — hard backstop on total node
-  transitions per turn, beyond the rewrite cap.
+  transitions per turn, beyond the retry cap.
 - **`git grep`/`clone_repository` have no timeout** — pre-existing gap in
   `repository_clone.py`, inherited here.
 - **Full-clone startup cost is repo-dependent and unbounded** — a repo
@@ -159,9 +184,19 @@ long-lived, not tied to any one conversation.
   Qdrant stays a pure vector/payload store; Postgres is the
   system-of-record for everything relational. Conversation checkpointing
   uses LangGraph's own Postgres checkpointer rather than a hand-rolled messages table.
-- **Grading + query-rewrite node** — targets vague/paraphrased queries
-  under-matching in hybrid search with a bounded, cheap LLM check, while
-  leaving the agent free to try a different tool once the budget is spent.
+- **Answer-level grading, not retrieval-level** — judges the final answer
+  against the user's question, not the raw hits against the search query;
+  relevant-looking hits don't guarantee the question got answered. No
+  separate rewrite node — the retry loop reuses the ordinary `agent` node
+  with the evaluator's reasoning added as context, since it already has
+  full tool freedom.
+- **`submit_answer` as a tool, not free text** — makes evidence a
+  schema-enforced requirement instead of a prompted one, and reuses the
+  same tool-call routing as the other three tools. Also settles the
+  citation format: `file_path`/`start_line`/`end_line`.
+- **Hybrid-search-before-submit is a code gate, not a prompt instruction**
+  — guarantees the index gets consulted every turn, regardless of what
+  the agent already appears to know from `grep`/file reads.
 - **Full clone over shallow-refetch-by-SHA or blobless/partial clone** —
   the only option that's both host-agnostic (no server-side feature flag
   required, unlike SHA-in-want) and offline-safe after the initial sync
@@ -172,9 +207,9 @@ long-lived, not tied to any one conversation.
 
 - Per-process clone concurrency under simultaneous conversations on the
   same process — §2.3.
-- Citation format in the final answer (e.g. `file_path:start_line-end_line`)
-  isn't specified yet — the agent's system prompt should require it, exact
-  wording still open.
+- Intent taxonomy (implementation / architecture / heuristics / symbol /
+  workflow) is prompt guidance only for now — may become a structured
+  decision later.
 - Postgres schema for repo metadata (single row vs. keyed table) not
   spelled out — trivial either way at single-repo MVP scope.
 - No mitigation designed for pathologically large repo histories (§2.7)
