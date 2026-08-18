@@ -3,7 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from repository_clone import CloneError, clone_repository, prune_unwanted_files
+from repository_clone import (
+    CloneError,
+    UpdateError,
+    clone_full_repository,
+    clone_repository,
+    get_current_commit_sha,
+    prune_unwanted_files,
+    update_repository,
+)
 
 REMOTE_REPO_URL = "https://github.com/NaorGavriel/book-select.git"
 
@@ -72,6 +80,120 @@ def test_clone_repository_against_real_remote(tmp_path: Path) -> None:
     assert result == dest_dir
     assert (dest_dir / ".git").is_dir()
     assert any(dest_dir.iterdir())
+
+
+def test_clone_full_repository_creates_working_checkout(local_repo: Path, tmp_path: Path) -> None:
+    """A full clone of a real repo lands at dest_dir with a working .git/ and its tracked files."""
+    dest_dir = tmp_path / "cloned"
+
+    result = clone_full_repository(str(local_repo), dest_dir)
+
+    assert result == dest_dir
+    assert (dest_dir / ".git").is_dir()
+    assert (dest_dir / "hello.py").exists()
+
+
+def test_clone_full_repository_wipes_existing_dest_dir(local_repo: Path, tmp_path: Path) -> None:
+    """A pre-existing dest_dir (e.g. leftover from a prior run) is wiped before cloning."""
+    dest_dir = tmp_path / "cloned"
+    dest_dir.mkdir()
+    stale_file = dest_dir / "stale.txt"
+    stale_file.write_text("leftover from a previous run")
+
+    clone_full_repository(str(local_repo), dest_dir)
+
+    assert not stale_file.exists()
+    assert (dest_dir / "hello.py").exists()
+
+
+def test_clone_full_repository_raises_clone_error_on_invalid_source(tmp_path: Path) -> None:
+    """A source git can't reach (bad URL/path) surfaces as CloneError, not a bare subprocess error."""
+    dest_dir = tmp_path / "cloned"
+    missing_source = tmp_path / "does_not_exist"
+
+    with pytest.raises(CloneError):
+        clone_full_repository(str(missing_source), dest_dir)
+
+
+def test_clone_full_repository_keeps_full_history_unlike_the_shallow_clone(
+    local_repo: Path, tmp_path: Path
+) -> None:
+    """Distinguishes clone_full_repository from clone_repository's --depth=1: no shallow marker, full log."""
+    (local_repo / "second.py").write_text("print('second')\n")
+    subprocess.run(["git", "add", "."], cwd=local_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "second commit"], cwd=local_repo, check=True, capture_output=True
+    )
+    dest_dir = tmp_path / "cloned"
+
+    clone_full_repository(str(local_repo), dest_dir)
+
+    assert not (dest_dir / ".git" / "shallow").exists()
+    log = subprocess.run(
+        ["git", "log", "--oneline"], cwd=dest_dir, check=True, capture_output=True, text=True
+    )
+    assert len(log.stdout.strip().splitlines()) == 2
+
+
+def test_update_repository_fetches_and_resets_to_a_newer_commit(local_repo: Path, tmp_path: Path) -> None:
+    """A commit made upstream after the clone is pulled in and checked out."""
+    dest_dir = tmp_path / "cloned"
+    clone_full_repository(str(local_repo), dest_dir)
+    (local_repo / "second.py").write_text("print('second')\n")
+    subprocess.run(["git", "add", "."], cwd=local_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "second commit"], cwd=local_repo, check=True, capture_output=True
+    )
+    new_sha = get_current_commit_sha(local_repo)
+
+    update_repository(dest_dir, new_sha)
+
+    assert get_current_commit_sha(dest_dir) == new_sha
+    assert (dest_dir / "second.py").exists()
+
+
+def test_update_repository_removes_files_deleted_upstream(local_repo: Path, tmp_path: Path) -> None:
+    """`--hard` reset rewrites the working tree, so a file removed upstream disappears locally too."""
+    dest_dir = tmp_path / "cloned"
+    clone_full_repository(str(local_repo), dest_dir)
+    (local_repo / "hello.py").unlink()
+    subprocess.run(["git", "add", "-A"], cwd=local_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remove hello.py"], cwd=local_repo, check=True, capture_output=True
+    )
+    new_sha = get_current_commit_sha(local_repo)
+
+    update_repository(dest_dir, new_sha)
+
+    assert not (dest_dir / "hello.py").exists()
+
+
+def test_update_repository_can_reset_to_an_earlier_commit(local_repo: Path, tmp_path: Path) -> None:
+    """update_repository isn't fast-forward-only - it can roll back to any known sha."""
+    initial_sha = get_current_commit_sha(local_repo)
+    (local_repo / "second.py").write_text("print('second')\n")
+    subprocess.run(["git", "add", "."], cwd=local_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "second commit"], cwd=local_repo, check=True, capture_output=True
+    )
+    dest_dir = tmp_path / "cloned"
+    clone_full_repository(str(local_repo), dest_dir)
+
+    update_repository(dest_dir, initial_sha)
+
+    assert get_current_commit_sha(dest_dir) == initial_sha
+    assert not (dest_dir / "second.py").exists()
+
+
+def test_update_repository_raises_update_error_for_an_unknown_commit(
+    local_repo: Path, tmp_path: Path
+) -> None:
+    """A sha that doesn't exist anywhere reachable surfaces as UpdateError, not a bare subprocess error."""
+    dest_dir = tmp_path / "cloned"
+    clone_full_repository(str(local_repo), dest_dir)
+
+    with pytest.raises(UpdateError):
+        update_repository(dest_dir, "0" * 40)
 
 
 def test_prune_unwanted_files_deletes_only_the_given_paths(tmp_path: Path) -> None:

@@ -9,6 +9,10 @@ class CloneError(RuntimeError):
     """Raised when `git clone` fails - bad URL, network failure, or a private repo needing auth."""
 
 
+class UpdateError(RuntimeError):
+    """Raised when updating an existing clone fails - `git fetch` or `git reset --hard`."""
+
+
 def _rmtree(path: Path) -> None:
     """Delete a directory tree, clearing read-only attributes on failure and retrying.
 
@@ -38,6 +42,53 @@ def clone_repository(github_url: str, dest_dir: Path) -> Path:
     except subprocess.CalledProcessError as e:
         raise CloneError(f"failed to clone {github_url!r}: {e.stderr}") from e
     return dest_dir
+
+
+def clone_full_repository(github_url: str, dest_dir: Path) -> Path:
+    """Full clone (no `--depth`/`--filter`) of `github_url` into `dest_dir`, wiping any existing directory there first.
+
+    Used for the query agent's per-process clone (`docs/query_agent.md`
+    §2.3/§2.8): full history so `update_repository` can reset to any commit
+    offline, without depending on the remote staying reachable.
+    """
+    if dest_dir.exists():
+        _rmtree(dest_dir)
+    try:
+        subprocess.run(
+            ["git", "clone", github_url, str(dest_dir)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise CloneError(f"failed to clone {github_url!r}: {e.stderr}") from e
+    return dest_dir
+
+
+def update_repository(repo_path: Path, commit_sha: str) -> None:
+    """Bring an existing full clone at `repo_path` up to `commit_sha`.
+
+    `git fetch origin` (the default refspec covers every branch, so nothing
+    needs explicit tracking) followed by `git reset --hard <commit_sha>` -
+    only files that actually changed get rewritten.
+    """
+    try:
+        subprocess.run(
+            ["git", "fetch", "origin"],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", commit_sha],
+            cwd=repo_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise UpdateError(f"failed to update {repo_path} to {commit_sha!r}: {e.stderr}") from e
 
 
 def get_current_commit_sha(repo_path: Path) -> str:
