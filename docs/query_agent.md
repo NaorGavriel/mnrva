@@ -27,9 +27,11 @@ All four are bound to the agent node; the agent decides which to call.
 
 - **`submit_answer(answer: str, evidence: list[Citation])`** — how the agent
   finishes a turn; there's no free-text final message. `Citation` =
-  `{file_path, start_line, end_line}`. `evidence` is required and
-  non-empty: the agent can't submit a claim with no cited source. One tool
-  call per turn, same as the other three.
+  `{file_path, start_line, end_line, citation_text}` — `citation_text` is
+  the quoted source excerpt itself (code or prose, e.g. from a `.md` file),
+  not just its location. `evidence` is required and non-empty: the agent
+  can't submit a claim with no cited source. One tool call per turn, same
+  as the other three.
 
 ## 2.2 New `chunks.py` surface
 - `search_chunks(...)` — §2.1, new.
@@ -193,7 +195,7 @@ long-lived, not tied to any one conversation.
 - **`submit_answer` as a tool, not free text** — makes evidence a
   schema-enforced requirement instead of a prompted one, and reuses the
   same tool-call routing as the other three tools. Also settles the
-  citation format: `file_path`/`start_line`/`end_line`.
+  citation format: `file_path`/`start_line`/`end_line`/`citation_text`.
 - **Hybrid-search-before-submit is a code gate, not a prompt instruction**
   — guarantees the index gets consulted every turn, regardless of what
   the agent already appears to know from `grep`/file reads.
