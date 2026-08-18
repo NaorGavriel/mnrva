@@ -36,12 +36,20 @@ query-agent process, so each agent maintains their own clone of the repository.
 - Each process maintains one local clone, e.g.
   `repository_files/agent_clone/`, reused across every conversation that
   process handles.
-- Each process sync it's existing (or non-existing) repository clone on start-up, clones the repository if required.
-- At the start of each conversation, a `sync_clone()` step compares the
-  clone's current commit (`repository_clone.get_current_commit_sha`)
-  against `commit_sha` in Postgres. Mismatch (or no clone yet) →
-  `clone_repository` re-clones. Match → no-op (cheap: one local `git
-  rev-parse` plus one Postgres read).
+- `sync_clone()` runs at process startup, comparing the clone's current
+  commit (`repository_clone.get_current_commit_sha`) against `commit_sha`
+  in Postgres: no clone yet → **cold start**, mismatch → **update**,
+  match → no-op (cheap: one local `git rev-parse` + one Postgres read).
+- **Clone strategy: full clone, not shallow, not partial/blobless** — see
+  §2.8 for why the alternatives were rejected.
+  - **Cold start**: new `clone_full_repository(github_url, dest_dir) -> Path`
+    in `repository_clone.py` — plain `git clone`, no `--depth`/`--filter`.
+    The one intentionally expensive step, paid once per process at
+    startup — off the conversation-serving path.
+  - **Update**: new `update_repository(repo_path: Path, commit_sha: str) -> None`
+    — `git fetch origin` (all branches by default, so no branch needs
+    tracking) then `git reset --hard <commit_sha>`. Only files that
+    actually changed get rewritten.
 - The refresh pipeline (component 3) is what actually advances
   `commit_sha` in Postgres after each sync; every agent process
   independently converges to it the next time it checks.
@@ -51,7 +59,7 @@ query-agent process, so each agent maintains their own clone of the repository.
   the repo-metadata row (`github_url`, `commit_sha`, `updated_at`) that
   uses it. `ingest_repository` writes the initial row; the refresh
   pipeline updates `commit_sha`; the agent only reads. Conversation state
-  (§2.4) shares `db_postgres.py`'s connection via its own `agent_messages.py`.
+  (§2.4) shares this same connection.
 - **Concurrency gap**: `clone_repository` does `rmtree` then `clone` on the
   same path. If a re-clone is triggered while another conversation on the
   same process is mid-read against that path, reads can fail or tear. Not
@@ -93,9 +101,7 @@ START → sync_clone → agent ─(no tool calls)→ END
                        agent   (proceeds with a low-confidence note)
 ```
 
-- **`sync_clone`** — not an LLM call. Runs the sha comparison (§2.3) once
-  per conversation turn; usually a no-op after the first turn on a given
-  process.
+- **`sync_clone`** — not an LLM call; runs the check from §2.3.
 - **`agent`** — LLM node (`AGENT_MODEL` env var, §2.7), bound to all three
   tools. Calls a tool or emits the final answer.
 - **`tools`** — `ToolNode` executing whatever the agent requested.
@@ -103,7 +109,7 @@ START → sync_clone → agent ─(no tool calls)→ END
   call. Judges whether the hits are relevant to the query that produced
   them.
 - **`rewrite_query`** — LLM node, runs when grading fails and
-  `rewrite_count < MAX_REWRITES` (proposed: 2). Rewrites/expands the query,
+  `rewrite_count < MAX_REWRITES` (§2.7). Rewrites/expands the query,
   re-invokes `hybrid_search_tool`. Once the budget is spent, control falls
   through to `agent`, which decides whether to try another tool or answer
   with a caveat - the graph never hard-fails on a bad retrieval.
@@ -112,9 +118,7 @@ START → sync_clone → agent ─(no tool calls)→ END
 
 1. Caller starts a conversation with some `thread_id`, against some
    already-running agent process.
-2. `sync_clone` checks/refreshes that process's clone (cheap after the
-   first conversation of the process's lifetime, or after any
-   refresh-pipeline run that moved `commit_sha`).
+2. `sync_clone` runs (§2.3) — cheap after the first turn.
 3. `agent` reasons over the query, looping through `tools`/
    `grade_retrieval`/`rewrite_query` until it emits an answer.
 4. Postgres checkpoints `messages`/`retrieval_grade`/`rewrite_count` under
@@ -122,8 +126,7 @@ START → sync_clone → agent ─(no tool calls)→ END
    `thread_id`, not just the one that handled turn 1.
 5. Follow-up turn, possibly on a different process: prior `messages`
    restored from Postgres; that process's own `sync_clone` runs
-   independently (first-time clone if it's never handled this repo
-   before, no-op if it has and is current).
+   independently (§2.3).
 
 No per-conversation cleanup step — the clone is process-scoped and
 long-lived, not tied to any one conversation.
@@ -136,6 +139,10 @@ long-lived, not tied to any one conversation.
   transitions per turn, beyond the rewrite cap.
 - **`git grep`/`clone_repository` have no timeout** — pre-existing gap in
   `repository_clone.py`, inherited here.
+- **Full-clone startup cost is repo-dependent and unbounded** — a repo
+  with a large or bloat-heavy history (old binaries/assets still in the
+  object database) makes a process's first clone slower and bigger, with
+  no cap. Accepted for MVP.
 
 ## 2.8 Decisions & reasoning (recap)
 
@@ -155,14 +162,20 @@ long-lived, not tied to any one conversation.
 - **Grading + query-rewrite node** — targets vague/paraphrased queries
   under-matching in hybrid search with a bounded, cheap LLM check, while
   leaving the agent free to try a different tool once the budget is spent.
+- **Full clone over shallow-refetch-by-SHA or blobless/partial clone** —
+  the only option that's both host-agnostic (no server-side feature flag
+  required, unlike SHA-in-want) and offline-safe after the initial sync
+  (unlike blobless clone, which keeps depending on origin being reachable
+  at every future checkout). Cost tradeoff — §2.7.
 
 ## 2.9 Known limitations / open decisions
 
 - Per-process clone concurrency under simultaneous conversations on the
   same process — §2.3.
-- Exact `rewrite_count` value is proposals, not tuned.
 - Citation format in the final answer (e.g. `file_path:start_line-end_line`)
   isn't specified yet — the agent's system prompt should require it, exact
   wording still open.
 - Postgres schema for repo metadata (single row vs. keyed table) not
   spelled out — trivial either way at single-repo MVP scope.
+- No mitigation designed for pathologically large repo histories (§2.7)
+  — e.g. a `git backfill`-style incremental approach, if it ever matters.
