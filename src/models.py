@@ -2,7 +2,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from pathlib import PurePath
-from typing import Literal
+from typing import Literal, TypedDict
 
 
 CHUNK_NAMESPACE = uuid.UUID("d6e5f8c2-4b1a-4e3a-9c7d-8a2b6f0e1d3c")
@@ -86,6 +86,20 @@ def make_chunk(
         end_byte=end_byte,
         parent_id=parent_id,
     )
+
+
+class ChunkSearchResult(TypedDict):
+    """One hybrid-search hit: a chunk's identifying/text payload plus its fused RRF score."""
+
+    file_path: str
+    symbol_name: str
+    class_name: str
+    kind: Literal["class", "function", "section"]
+    start_byte: int | None
+    end_byte: int | None
+    raw_text: str
+    context_text: str | None
+    score: float
 
 
 @dataclass

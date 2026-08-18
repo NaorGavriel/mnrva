@@ -1,7 +1,8 @@
 from qdrant_client import QdrantClient, models
 
 from db_qdrant import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
-from models import Chunk, chunk_retrieval_text
+from embeddings import embed_text
+from models import Chunk, ChunkSearchResult, chunk_retrieval_text
 
 
 def upsert_chunks(client: QdrantClient, collection_name: str, chunks: list[Chunk]) -> None:
@@ -38,3 +39,56 @@ def upsert_chunks(client: QdrantClient, collection_name: str, chunks: list[Chunk
         for chunk in chunks
     ]
     client.upsert(collection_name=collection_name, points=points)
+
+
+def search_chunks(
+    client: QdrantClient,
+    collection_name: str,
+    query_text: str,
+    top_k: int = 10,
+    language: str | None = None,
+    kind: str | None = None,
+) -> list[ChunkSearchResult]:
+    """Hybrid dense + BM25 search over chunks, fused with Qdrant's native RRF.
+
+    Optionally restricts results to a given `language` and/or `kind` via a
+    payload filter.
+    """
+
+    conditions = []
+    if language is not None:
+        conditions.append(models.FieldCondition(key="language", match=models.MatchValue(value=language)))
+    if kind is not None:
+        conditions.append(models.FieldCondition(key="kind", match=models.MatchValue(value=kind)))
+    query_filter = models.Filter(must=conditions) if conditions else None
+
+    response = client.query_points(
+        collection_name=collection_name,
+        prefetch=[
+            models.Prefetch(
+                query=embed_text(query_text), using=DENSE_VECTOR_NAME, filter=query_filter
+            ),
+            models.Prefetch(
+                query=models.Document(text=query_text, model="Qdrant/bm25"),
+                using=SPARSE_VECTOR_NAME,
+                filter=query_filter,
+            ),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
+        limit=top_k,
+    )
+
+    return [
+        ChunkSearchResult(
+            file_path=point.payload["file_path"],
+            symbol_name=point.payload["symbol_name"],
+            class_name=point.payload["class_name"],
+            kind=point.payload["kind"],
+            start_byte=point.payload["start_byte"],
+            end_byte=point.payload["end_byte"],
+            raw_text=point.payload["raw_text"],
+            context_text=point.payload["context_text"],
+            score=point.score,
+        )
+        for point in response.points
+    ]
