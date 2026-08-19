@@ -7,3 +7,11 @@ class Citation(BaseModel):
     start_line: int
     end_line: int
     citation_text: str # could be code or free form text if it's from .md for example
+
+
+class GrepMatch(BaseModel):
+    """One matching line from `grep_search_tool`."""
+
+    file_path: str
+    line_number: int
+    line_text: str
