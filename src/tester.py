@@ -145,7 +145,7 @@ def test_query_agent_graph() -> None:
 
     Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
     graph = build_graph()
-    result = graph.invoke({"question": "What does the Chunk class represent?", "retrieved_chunks": [], "answer": ""})
+    result = graph.invoke({"question": "For how long is the access token cookie valid?", "retrieved_chunks": [], "answer": ""})
     print(f"retrieved {len(result['retrieved_chunks'])} chunks")
     for chunk in result["retrieved_chunks"]:
         print(f"  {chunk['file_path']} ({chunk['symbol_name']}) score={chunk['score']:.3f}")
