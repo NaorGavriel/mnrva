@@ -10,6 +10,7 @@ from models import Chunk
 from prose_parser import is_prose_file, parse_prose_file
 from registry import LanguageRegistry
 from repository_clone import clone_repository, delete_repository
+from query_agent.graph import build_graph
 from repository_ingester import REPOSITORY_FILES_DIR, ingest_repository
 from repository_parser import list_source_files
 
@@ -139,11 +140,24 @@ def test_find_chunk_id_collisions() -> None:
             )
 
 
+def test_query_agent_graph() -> None:
+    """Run the compiled query-agent graph end to end against live Qdrant/OpenAI.
+
+    Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
+    graph = build_graph()
+    result = graph.invoke({"question": "What does the Chunk class represent?", "retrieved_chunks": [], "answer": ""})
+    print(f"retrieved {len(result['retrieved_chunks'])} chunks")
+    for chunk in result["retrieved_chunks"]:
+        print(f"  {chunk['file_path']} ({chunk['symbol_name']}) score={chunk['score']:.3f}")
+    print(f"\nanswer:\n{result['answer']}")
+
+
 if __name__ == "__main__":
     #test_embedding()
     #test_db_init()
     #test_extract_chunks_inline()
     #test_parse_code_file()
     #test_enrich_chunks()
-    test_ingest_repository()
+    #test_ingest_repository()
     #test_find_chunk_id_collisions()
+    test_query_agent_graph()
