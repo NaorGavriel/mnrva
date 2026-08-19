@@ -1,13 +1,11 @@
-from typing import Annotated, Literal, TypedDict
+from typing import TypedDict
 
-from langchain_core.messages import AnyMessage
-from langgraph.graph import add_messages
+from models import ChunkSearchResult
 
 
 class AgentState(TypedDict):
-    """LangGraph state for one query-agent conversation, keyed by thread_id (`docs/query_agent.md` §2.4)."""
+    """LangGraph state for one query-agent turn: the question, its retrieved chunks, and the generated answer."""
 
-    messages: Annotated[list[AnyMessage], add_messages]
-    answer_grade: Literal["good", "bad"] | None
-    evaluation_reasoning: str | None
-    retry_count: int
+    question: str
+    retrieved_chunks: list[ChunkSearchResult]
+    answer: str

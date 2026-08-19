@@ -2,8 +2,59 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from query_agent.tools import grep_search_tool, whole_file_read_tool
+import chunks
+from query_agent.agent_schemas import GrepMatch
+from query_agent.tools import (
+    grep_search_tool,
+    make_grep_search_tool,
+    make_hybrid_search_tool,
+    make_whole_file_read_tool,
+    whole_file_read_tool,
+)
+
+
+class FakePoint:
+    """Stands in for a Qdrant `ScoredPoint`."""
+
+    def __init__(self, payload: dict, score: float) -> None:
+        self.payload = payload
+        self.score = score
+
+
+class FakeQueryResponse:
+    """Stands in for a Qdrant `QueryResponse`."""
+
+    def __init__(self, points: list[FakePoint]) -> None:
+        self.points = points
+
+
+class FakeQdrantClient:
+    """Records query_points calls and returns one canned hit, instead of hitting a real Qdrant server."""
+
+    def __init__(self) -> None:
+        self.query_points_calls: list[dict] = []
+
+    def query_points(self, **kwargs) -> FakeQueryResponse:
+        self.query_points_calls.append(kwargs)
+        return FakeQueryResponse(
+            [
+                FakePoint(
+                    {
+                        "file_path": "src/main.py",
+                        "symbol_name": "greet",
+                        "class_name": "",
+                        "kind": "function",
+                        "start_byte": 0,
+                        "end_byte": 18,
+                        "raw_text": "def greet(): pass",
+                        "context_text": "greets someone",
+                    },
+                    score=0.9,
+                )
+            ]
+        )
 
 
 @pytest.fixture
@@ -79,26 +130,84 @@ def test_whole_file_read_tool_rejects_a_start_line_below_one(repo: Path) -> None
 
 
 def test_grep_search_tool_finds_matching_lines_with_line_numbers(repo: Path) -> None:
-    output = grep_search_tool(repo, "def greet")
+    matches = grep_search_tool(repo, "def greet")
 
-    assert "main.py:1:def greet():" in output
-    assert "nested/utils.py:1:def greet_loudly():" in output
-
-
-def test_grep_search_tool_treats_the_pattern_as_a_fixed_string_not_a_regex(repo: Path) -> None:
-    output = grep_search_tool(repo, "greet()")
-
-    assert "main.py:1:def greet():" in output
+    assert GrepMatch(file_path="main.py", line_number=1, line_text="def greet():") in matches
+    assert GrepMatch(file_path="nested/utils.py", line_number=1, line_text="def greet_loudly():") in matches
 
 
 def test_grep_search_tool_restricts_matches_to_the_given_glob(repo: Path) -> None:
-    output = grep_search_tool(repo, "def greet", file_glob="nested/*")
+    matches = grep_search_tool(repo, "def greet", file_glob="nested/*")
 
-    assert "nested/utils.py" in output
-    assert "main.py:1" not in output
+    assert any(match.file_path == "nested/utils.py" for match in matches)
+    assert not any(match.file_path == "main.py" for match in matches)
 
 
-def test_grep_search_tool_returns_empty_string_for_no_matches(repo: Path) -> None:
-    output = grep_search_tool(repo, "no_such_symbol_anywhere")
+def test_grep_search_tool_returns_empty_list_for_no_matches(repo: Path) -> None:
+    matches = grep_search_tool(repo, "no_such_symbol_anywhere")
 
-    assert output == ""
+    assert matches == []
+
+
+def test_make_hybrid_search_tool_has_the_documented_name() -> None:
+    hybrid_search_tool = make_hybrid_search_tool(FakeQdrantClient(), "code_chunks")
+
+    assert hybrid_search_tool.name == "hybrid_search_tool"
+
+
+def test_make_hybrid_search_tool_delegates_to_search_chunks_with_the_bound_client_and_collection(monkeypatch) -> None:
+    monkeypatch.setattr(chunks, "embed_text", lambda text: [0.1, 0.2, 0.3])
+    client = FakeQdrantClient()
+    hybrid_search_tool = make_hybrid_search_tool(client, "code_chunks")
+
+    hybrid_search_tool.invoke({"query": "auth handling"})
+
+    assert client.query_points_calls[0]["collection_name"] == "code_chunks"
+
+
+def test_make_hybrid_search_tool_returns_search_chunks_output_unmodified(monkeypatch) -> None:
+    monkeypatch.setattr(chunks, "embed_text", lambda text: [0.1, 0.2, 0.3])
+    hybrid_search_tool = make_hybrid_search_tool(FakeQdrantClient(), "code_chunks")
+
+    result = hybrid_search_tool.invoke({"query": "auth handling"})
+    assert result == [
+        {
+            "file_path": "src/main.py",
+            "symbol_name": "greet",
+            "class_name": "",
+            "kind": "function",
+            "start_byte": 0,
+            "end_byte": 18,
+            "raw_text": "def greet(): pass",
+            "context_text": "greets someone",
+            "score": 0.9,
+        }
+    ]
+
+
+def test_make_whole_file_read_tool_has_the_documented_name(repo: Path) -> None:
+    read_tool = make_whole_file_read_tool(repo)
+
+    assert read_tool.name == "whole_file_read_tool"
+
+
+def test_make_whole_file_read_tool_delegates_to_the_bound_repo_path(repo: Path) -> None:
+    read_tool = make_whole_file_read_tool(repo)
+
+    content = read_tool.invoke({"file_path": "main.py"})
+
+    assert content == "def greet():\n    return 'hello'\n\n\ndef farewell():\n    return 'bye'\n"
+
+
+def test_make_grep_search_tool_has_the_documented_name(repo: Path) -> None:
+    grep_tool = make_grep_search_tool(repo)
+
+    assert grep_tool.name == "grep_search_tool"
+
+
+def test_make_grep_search_tool_delegates_to_the_bound_repo_path(repo: Path) -> None:
+    grep_tool = make_grep_search_tool(repo)
+
+    matches = grep_tool.invoke({"pattern": "def greet"})
+
+    assert GrepMatch(file_path="main.py", line_number=1, line_text="def greet():") in matches
