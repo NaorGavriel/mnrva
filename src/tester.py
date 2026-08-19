@@ -1,7 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
 
-import db_qdrant
+import db.db_qdrant as db_qdrant
 from code_parser import extract_chunks, parse_code_file
 from embeddings import embed_text
 from enrichment import enrich_chunks

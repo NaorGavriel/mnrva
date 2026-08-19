@@ -4,7 +4,7 @@ from qdrant_client import models as qdrant_models
 
 import chunks
 from chunks import search_chunks, upsert_chunks
-from db_qdrant import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
+from db.db_qdrant import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from models import Chunk, chunk_retrieval_text
 
 

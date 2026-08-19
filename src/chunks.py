@@ -1,6 +1,6 @@
 from qdrant_client import QdrantClient, models
 
-from db_qdrant import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
+from db.db_qdrant import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from embeddings import embed_text
 from models import Chunk, ChunkSearchResult, chunk_retrieval_text
 
