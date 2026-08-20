@@ -27,8 +27,8 @@ def _make_chunk(context_text: str | None = None) -> Chunk:
 
 
 def test_embed_chunks_populates_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every chunk in the result has `embedding` set from embed_text's return value."""
-    monkeypatch.setattr(embeddings, "embed_text", lambda text: [1.0, 2.0, 3.0])
+    """Every chunk in the result has `embedding` set from embed_texts's return value, in order."""
+    monkeypatch.setattr(embeddings, "embed_texts", lambda texts: [[1.0, 2.0, 3.0] for _ in texts])
 
     embedded = embed_chunks([_make_chunk(), _make_chunk(context_text="context")])
 
@@ -37,29 +37,29 @@ def test_embed_chunks_populates_embedding(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_embed_chunks_embeds_context_plus_raw_text(monkeypatch: pytest.MonkeyPatch) -> None:
     """A chunk with context_text embeds context + raw_text, matching chunk_retrieval_text."""
-    seen_inputs: list[str] = []
-    monkeypatch.setattr(embeddings, "embed_text", lambda text: seen_inputs.append(text) or [])
+    seen_batches: list[list[str]] = []
+    monkeypatch.setattr(embeddings, "embed_texts", lambda texts: seen_batches.append(texts) or [[] for _ in texts])
 
     embed_chunks([_make_chunk(context_text="this greets someone")])
 
-    assert seen_inputs == ["this greets someone\n\ndef greet(): pass"]
+    assert seen_batches == [["this greets someone\n\ndef greet(): pass"]]
 
 
 def test_embed_chunks_embeds_raw_text_alone_without_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A chunk with no context_text yet embeds raw_text alone."""
-    seen_inputs: list[str] = []
-    monkeypatch.setattr(embeddings, "embed_text", lambda text: seen_inputs.append(text) or [])
+    seen_batches: list[list[str]] = []
+    monkeypatch.setattr(embeddings, "embed_texts", lambda texts: seen_batches.append(texts) or [[] for _ in texts])
 
     embed_chunks([_make_chunk()])
 
-    assert seen_inputs == ["def greet(): pass"]
+    assert seen_batches == [["def greet(): pass"]]
 
 
 def test_embed_chunks_mutates_chunks_in_place(monkeypatch: pytest.MonkeyPatch) -> None:
     """embed_chunks sets `embedding` directly on the given chunks and returns the same objects."""
-    monkeypatch.setattr(embeddings, "embed_text", lambda text: [9.0])
+    monkeypatch.setattr(embeddings, "embed_texts", lambda texts: [[9.0] for _ in texts])
     chunk = _make_chunk()
 
     embedded = embed_chunks([chunk])
@@ -70,10 +70,24 @@ def test_embed_chunks_mutates_chunks_in_place(monkeypatch: pytest.MonkeyPatch) -
 
 def test_embed_chunks_preserves_order_and_count(monkeypatch: pytest.MonkeyPatch) -> None:
     """Output has the same chunks, in the same order, as input."""
-    monkeypatch.setattr(embeddings, "embed_text", lambda text: [0.0])
+    monkeypatch.setattr(embeddings, "embed_texts", lambda texts: [[0.0] for _ in texts])
     chunks = [_make_chunk(), _make_chunk(context_text="c")]
 
     embedded = embed_chunks(chunks)
 
     assert len(embedded) == 2
     assert [chunk.raw_text for chunk in embedded] == [chunk.raw_text for chunk in chunks]
+
+
+def test_embed_chunks_batches_requests_at_embedding_batch_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    """More chunks than EMBEDDING_BATCH_SIZE are split across multiple embed_texts calls."""
+    monkeypatch.setattr(embeddings, "EMBEDDING_BATCH_SIZE", 2)
+    seen_batch_sizes: list[int] = []
+    monkeypatch.setattr(
+        embeddings, "embed_texts", lambda texts: seen_batch_sizes.append(len(texts)) or [[0.0] for _ in texts]
+    )
+    chunks = [_make_chunk(), _make_chunk(), _make_chunk()]
+
+    embed_chunks(chunks)
+
+    assert seen_batch_sizes == [2, 1]

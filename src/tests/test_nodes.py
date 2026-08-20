@@ -28,6 +28,11 @@ class FakeStructuredLLM:
         self.invoke_calls.append(input)
         return self._outputs.pop(0)
 
+    def batch(self, inputs, *args, **kwargs):
+        self.invoke_calls.extend(inputs)
+        outputs, self._outputs = self._outputs[: len(inputs)], self._outputs[len(inputs) :]
+        return outputs
+
 
 class FakeLLM:
     """Stands in for a chat-model Runnable whose only use in these nodes is with_structured_output."""

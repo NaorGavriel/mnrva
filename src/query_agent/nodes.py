@@ -1,3 +1,4 @@
+import os
 from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -11,9 +12,12 @@ from query_agent.agent_prompts import (
     GENERATE_ANSWER_SYSTEM_PROMPT,
     GRADE_DOCUMENT_SYSTEM_PROMPT,
 )
+from dotenv import load_dotenv
 from query_agent.agent_schemas import Answer, EvaluateAnswer, EvaluateQuestion, GradeDocument
 from query_agent.state import AgentState
 
+load_dotenv()
+GRADE_MAX_CONCURRENCY = int(os.environ["GRADE_MAX_CONCURRENCY"])
 
 def make_evaluate_question_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
     """Build the `evaluate_question` node: classifies the question and produces a synthesized search query + filters."""
@@ -60,17 +64,23 @@ def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
 
     def grade_documents_node(state: AgentState) -> dict:
         chunk_relevance = dict(state.get("chunk_relevance", {}))
-        for chunk in state["retrieved_chunks"].values():
-            if chunk["id"] in chunk_relevance:
-                continue
-            prompt = (
-                f"User's question:\n{state['question']}\n\n"
-                f"Retrieved chunk ({chunk['file_path']}, {chunk['symbol_name']}):\n"
-                f"{chunk['context_text'] or ''}\n\n{chunk['raw_text']}"
-            )
-            result: GradeDocument = structured_llm.invoke(
-                [SystemMessage(GRADE_DOCUMENT_SYSTEM_PROMPT), HumanMessage(prompt)]
-            )
+        ungraded = [chunk for chunk in state["retrieved_chunks"].values() if chunk["id"] not in chunk_relevance]
+        if not ungraded:
+            return {"chunk_relevance": chunk_relevance}
+
+        prompts = [
+            [
+                SystemMessage(GRADE_DOCUMENT_SYSTEM_PROMPT),
+                HumanMessage(
+                    f"User's question:\n{state['question']}\n\n"
+                    f"Retrieved chunk ({chunk['file_path']}, {chunk['symbol_name']}):\n"
+                    f"{chunk['context_text'] or ''}\n\n{chunk['raw_text']}"
+                ),
+            ]
+            for chunk in ungraded
+        ]
+        results: list[GradeDocument] = structured_llm.batch(prompts, config={"max_concurrency": GRADE_MAX_CONCURRENCY})
+        for chunk, result in zip(ungraded, results):
             chunk_relevance[chunk["id"]] = result.relevant
         return {"chunk_relevance": chunk_relevance}
 
