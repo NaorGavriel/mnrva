@@ -80,6 +80,7 @@ def search_chunks(
 
     return [
         ChunkSearchResult(
+            id=str(point.id),
             file_path=point.payload["file_path"],
             symbol_name=point.payload["symbol_name"],
             class_name=point.payload["class_name"],

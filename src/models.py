@@ -91,6 +91,7 @@ def make_chunk(
 class ChunkSearchResult(TypedDict):
     """One hybrid-search hit: a chunk's identifying/text payload plus its fused RRF score."""
 
+    id: str
     file_path: str
     symbol_name: str
     class_name: str

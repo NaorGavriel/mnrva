@@ -20,6 +20,12 @@ class EvaluateQuestion(BaseModel):
     expects_multiple_retrievals: bool = Field(description="Whether answering this question likely requires more than one retrieval attempt.")
 
 
+class GradeDocument(BaseModel):
+    """Structured output of grading one retrieved chunk's relevance to the user's question."""
+
+    relevant: Literal["yes", "no"]
+
+
 class Citation(BaseModel):
     """A source-code location backing a claim in the agent's answer."""
 

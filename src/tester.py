@@ -145,13 +145,14 @@ def test_query_agent_graph() -> None:
 
     Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
     graph = build_graph()
-    result = graph.invoke({"question": "What fields does the User class have?", "retrieved_chunks": [], "answer": ""})
+    result = graph.invoke({"question": "how is authentication implemented?", "retrieved_chunks": [], "answer": ""})
     print(f"question_type: {result['question_type']}")
     print(f"search_query: {result['search_query']!r}")
     print(f"search_filters: {result['search_filters']}")
     print(f"retrieved {len(result['retrieved_chunks'])} chunks")
     for chunk in result["retrieved_chunks"]:
-        print(f"  {chunk['file_path']} ({chunk['symbol_name']}) score={chunk['score']:.3f}")
+        relevance = result["chunk_relevance"].get(chunk["id"])
+        print(f"  [{relevance}] {chunk['file_path']} ({chunk['symbol_name']}) score={chunk['score']:.3f}")
     print(f"\nanswer:\n{result['answer']}")
 
 

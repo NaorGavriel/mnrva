@@ -5,8 +5,8 @@ from langchain_core.runnables import Runnable
 from qdrant_client import QdrantClient
 
 from chunks import search_chunks
-from query_agent.agent_prompts import EVALUATE_QUESTION_SYSTEM_PROMPT
-from query_agent.agent_schemas import EvaluateQuestion
+from query_agent.agent_prompts import EVALUATE_QUESTION_SYSTEM_PROMPT, GRADE_DOCUMENT_SYSTEM_PROMPT
+from query_agent.agent_schemas import EvaluateQuestion, GradeDocument
 from query_agent.state import AgentState
 
 
@@ -46,13 +46,39 @@ def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> 
     return retrieve_documents_node
 
 
+def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
+    """Build the `grade_documents` node: labels each not-yet-graded retrieved chunk yes/no for relevance to the question."""
+    structured_llm = llm.with_structured_output(GradeDocument)
+
+    def grade_documents_node(state: AgentState) -> dict:
+        chunk_relevance = dict(state.get("chunk_relevance", {}))
+        for chunk in state["retrieved_chunks"]:
+            if chunk["id"] in chunk_relevance:
+                continue
+            prompt = (
+                f"User's question:\n{state['question']}\n\n"
+                f"Retrieved chunk ({chunk['file_path']}, {chunk['symbol_name']}):\n"
+                f"{chunk['context_text'] or ''}\n\n{chunk['raw_text']}"
+            )
+            result: GradeDocument = structured_llm.invoke(
+                [SystemMessage(GRADE_DOCUMENT_SYSTEM_PROMPT), HumanMessage(prompt)]
+            )
+            chunk_relevance[chunk["id"]] = result.relevant
+        return {"chunk_relevance": chunk_relevance}
+
+    return grade_documents_node
+
+
 def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
     """Build the `generate_answer` node. `llm` is a plain chat-model Runnable - no structured output yet."""
 
     def generate_answer_node(state: AgentState) -> dict:
+        relevant_chunks = [
+            chunk for chunk in state["retrieved_chunks"] if state["chunk_relevance"].get(chunk["id"]) == "yes"
+        ]
         context = "\n\n".join(
             f"{chunk['file_path']} ({chunk['symbol_name']}):\n{chunk['raw_text']}"
-            for chunk in state["retrieved_chunks"]
+            for chunk in relevant_chunks
         )
         prompt = (
             f"User's question:\n{state['question']}\n\n"

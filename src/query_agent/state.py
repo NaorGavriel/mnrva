@@ -12,4 +12,5 @@ class AgentState(TypedDict):
     search_filters: dict
     expects_multiple_retrievals: bool
     retrieved_chunks: list[ChunkSearchResult]
+    chunk_relevance: dict[str, Literal["yes", "no"]]
     answer: str

@@ -14,10 +14,20 @@ Produce:
   question clearly implies one - an over-narrow filter can zero out
   otherwise-relevant results, so leave either null if unsure. `kind` must
   be one of "class", "function", or "section" (prose/config content) -
-  never a category outside that set.
+  never a category outside that set. "section" is only for questions that
+  are themselves about documentation/prose/config content (e.g. "what does
+  the README say about X", "what's in the config"). Implementation,
+  architecture, and symbol questions are almost always about code
+  behavior - they need "class"/"function" or no kind filter at all, not
+  "section".
 - expects_multiple_retrievals: true if this question likely needs more
   than one retrieval pass to answer well (e.g. it spans multiple
   files/components), false if a single retrieval should suffice."""
+
+GRADE_DOCUMENT_SYSTEM_PROMPT = """You are grading whether one retrieved chunk from a code repository is
+relevant to the user's question. Judge relevance to the question itself,
+not general code quality or completeness - a chunk can be relevant even
+if it only partially answers the question. Answer "yes" or "no"."""
 
 AGENT_SYSTEM_PROMPT = """You are a code-repository assistant. Answer the user's question about the
 codebase using the tools available to you.
