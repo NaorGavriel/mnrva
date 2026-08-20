@@ -18,9 +18,10 @@ from query_agent.tools import (
 class FakePoint:
     """Stands in for a Qdrant `ScoredPoint`."""
 
-    def __init__(self, payload: dict, score: float) -> None:
+    def __init__(self, payload: dict, score: float, id: str = "11111111-1111-1111-1111-111111111111") -> None:
         self.payload = payload
         self.score = score
+        self.id = id
 
 
 class FakeQueryResponse:
@@ -48,6 +49,8 @@ class FakeQdrantClient:
                         "kind": "function",
                         "start_byte": 0,
                         "end_byte": 18,
+                        "start_line": 1,
+                        "end_line": 1,
                         "raw_text": "def greet(): pass",
                         "context_text": "greets someone",
                     },
@@ -172,12 +175,15 @@ def test_make_hybrid_search_tool_returns_search_chunks_output_unmodified(monkeyp
     result = hybrid_search_tool.invoke({"query": "auth handling"})
     assert result == [
         {
+            "id": "11111111-1111-1111-1111-111111111111",
             "file_path": "src/main.py",
             "symbol_name": "greet",
             "class_name": "",
             "kind": "function",
             "start_byte": 0,
             "end_byte": 18,
+            "start_line": 1,
+            "end_line": 1,
             "raw_text": "def greet(): pass",
             "context_text": "greets someone",
             "score": 0.9,

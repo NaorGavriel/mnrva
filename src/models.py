@@ -52,6 +52,8 @@ class Chunk:
     raw_text: str
     start_byte: int | None
     end_byte: int | None
+    start_line: int | None
+    end_line: int | None
     parent_id: str | None
     context_text: str | None = None
     embedding: list[float] | None = None
@@ -67,6 +69,8 @@ def make_chunk(
     raw_text: str,
     start_byte: int | None,
     end_byte: int | None,
+    start_line: int | None,
+    end_line: int | None,
     parent_id: str | None,
 ) -> Chunk:
     """Build a `Chunk`, deriving its id and content hash from the given identity and body.
@@ -84,6 +88,8 @@ def make_chunk(
         raw_text=raw_text,
         start_byte=start_byte,
         end_byte=end_byte,
+        start_line=start_line,
+        end_line=end_line,
         parent_id=parent_id,
     )
 
@@ -98,6 +104,8 @@ class ChunkSearchResult(TypedDict):
     kind: Literal["class", "function", "section"]
     start_byte: int | None
     end_byte: int | None
+    start_line: int | None
+    end_line: int | None
     raw_text: str
     context_text: str | None
     score: float

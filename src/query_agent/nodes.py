@@ -5,8 +5,13 @@ from langchain_core.runnables import Runnable
 from qdrant_client import QdrantClient
 
 from chunks import search_chunks
-from query_agent.agent_prompts import EVALUATE_QUESTION_SYSTEM_PROMPT, GRADE_DOCUMENT_SYSTEM_PROMPT
-from query_agent.agent_schemas import EvaluateQuestion, GradeDocument
+from query_agent.agent_prompts import (
+    EVALUATE_ANSWER_SYSTEM_PROMPT,
+    EVALUATE_QUESTION_SYSTEM_PROMPT,
+    GENERATE_ANSWER_SYSTEM_PROMPT,
+    GRADE_DOCUMENT_SYSTEM_PROMPT,
+)
+from query_agent.agent_schemas import Answer, EvaluateAnswer, EvaluateQuestion, GradeDocument
 from query_agent.state import AgentState
 
 
@@ -18,7 +23,7 @@ def make_evaluate_question_node(llm: Runnable[Any, AIMessage]) -> Callable[[Agen
         result: EvaluateQuestion = structured_llm.invoke(
             [SystemMessage(EVALUATE_QUESTION_SYSTEM_PROMPT), HumanMessage(state["question"])]
         )
-        
+
         return {
             "question_type": result.question_type,
             "search_query": result.synthesized_query,
@@ -41,7 +46,10 @@ def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> 
             language=filters.get("language"),
             kind=filters.get("kind"),
         )
-        return {"retrieved_chunks": chunks}
+        return {
+            "retrieved_chunks": {chunk["id"]: chunk for chunk in chunks},
+            "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+        }
 
     return retrieve_documents_node
 
@@ -52,7 +60,7 @@ def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
 
     def grade_documents_node(state: AgentState) -> dict:
         chunk_relevance = dict(state.get("chunk_relevance", {}))
-        for chunk in state["retrieved_chunks"]:
+        for chunk in state["retrieved_chunks"].values():
             if chunk["id"] in chunk_relevance:
                 continue
             prompt = (
@@ -70,22 +78,48 @@ def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
 
 
 def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
-    """Build the `generate_answer` node. `llm` is a plain chat-model Runnable - no structured output yet."""
+    """Build the `generate_answer` node: yes-labeled chunks + question -> a structured `Answer` with citations."""
+    structured_llm = llm.with_structured_output(Answer)
 
     def generate_answer_node(state: AgentState) -> dict:
-        relevant_chunks = [
-            chunk for chunk in state["retrieved_chunks"] if state["chunk_relevance"].get(chunk["id"]) == "yes"
-        ]
+        relevant_chunks = [chunk for chunk in state["retrieved_chunks"].values() if state["chunk_relevance"].get(chunk["id"]) == "yes"]
+        
         context = "\n\n".join(
-            f"{chunk['file_path']} ({chunk['symbol_name']}):\n{chunk['raw_text']}"
+            f"file_path={chunk['file_path']} start_line={chunk['start_line']} end_line={chunk['end_line']}\n"
+            f"{chunk['symbol_name']}:\n{chunk['raw_text']}"
             for chunk in relevant_chunks
+        )
+        prompt = f"User's question:\n{state['question']}\n\nRetrieved chunks:\n{context}"
+        answer: Answer = structured_llm.invoke(
+            [SystemMessage(GENERATE_ANSWER_SYSTEM_PROMPT), HumanMessage(prompt)]
+        )
+        return {"answer": answer}
+
+    return generate_answer_node
+
+
+def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
+    """Build the `evaluate_answer` node: grades the generated Answer against the original question,
+    appending its reasoning to search_query on a bad grade to drive re-retrieval."""
+    structured_llm = llm.with_structured_output(EvaluateAnswer)
+
+    def evaluate_answer_node(state: AgentState) -> dict:
+        answer = state["answer"]
+        citations = "\n".join(
+            f"- {citation.file_path}:{citation.start_line}-{citation.end_line}: {citation.citation_text}"
+            for citation in answer.citations
         )
         prompt = (
             f"User's question:\n{state['question']}\n\n"
-            f"Relevant code:\n{context}\n\n"
-            "Answer the user's question using the code above."
+            f"Generated answer:\n{answer.text}\n\n"
+            f"Citations:\n{citations}"
         )
-        response = llm.invoke(prompt)
-        return {"answer": response.content}
+        result: EvaluateAnswer = structured_llm.invoke(
+            [SystemMessage(EVALUATE_ANSWER_SYSTEM_PROMPT), HumanMessage(prompt)]
+        )
+        updates: dict = {"answer_grade": result.grade, "evaluation_reasoning": result.reasoning}
+        if result.grade == "bad":
+            updates["search_query"] = f"{state['search_query']}\n\nPrevious attempt's answer fell short: {result.reasoning}"
+        return updates
 
-    return generate_answer_node
+    return evaluate_answer_node

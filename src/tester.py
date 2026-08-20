@@ -145,15 +145,21 @@ def test_query_agent_graph() -> None:
 
     Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
     graph = build_graph()
-    result = graph.invoke({"question": "how is authentication implemented?", "retrieved_chunks": [], "answer": ""})
+    result = graph.invoke({"question": "how is authentication implemented?"})
     print(f"question_type: {result['question_type']}")
     print(f"search_query: {result['search_query']!r}")
     print(f"search_filters: {result['search_filters']}")
+    print(f"retrieval_attempts: {result['retrieval_attempts']}")
     print(f"retrieved {len(result['retrieved_chunks'])} chunks")
-    for chunk in result["retrieved_chunks"]:
+    for chunk in result["retrieved_chunks"].values():
         relevance = result["chunk_relevance"].get(chunk["id"])
         print(f"  [{relevance}] {chunk['file_path']} ({chunk['symbol_name']}) score={chunk['score']:.3f}")
-    print(f"\nanswer:\n{result['answer']}")
+    print(f"\nanswer_grade: {result['answer_grade']}")
+    print(f"evaluation_reasoning: {result['evaluation_reasoning']}")
+    print(f"\nanswer:\n{result['answer'].text}")
+    print("\ncitations:")
+    for citation in result["answer"].citations:
+        print(f"  {citation.file_path}:{citation.start_line}-{citation.end_line}: {citation.citation_text!r}")
 
 
 if __name__ == "__main__":

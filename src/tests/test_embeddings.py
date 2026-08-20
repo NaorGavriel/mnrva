@@ -19,6 +19,8 @@ def _make_chunk(context_text: str | None = None) -> Chunk:
         raw_text="def greet(): pass",
         start_byte=0,
         end_byte=18,
+        start_line=1,
+        end_line=1,
         parent_id=None,
         context_text=context_text,
     )

@@ -27,9 +27,10 @@ class FakeQdrantClient:
 class FakePoint:
     """Stands in for a Qdrant `ScoredPoint`."""
 
-    def __init__(self, payload: dict, score: float) -> None:
+    def __init__(self, payload: dict, score: float, id: str = "11111111-1111-1111-1111-111111111111") -> None:
         self.payload = payload
         self.score = score
+        self.id = id
 
 
 class FakeQueryResponse:
@@ -47,6 +48,8 @@ def _make_point(score: float = 0.75, **payload_overrides) -> FakePoint:
         kind="function",
         start_byte=0,
         end_byte=18,
+        start_line=1,
+        end_line=1,
         raw_text="def greet(): pass",
         context_text="greets someone",
         language="python",
@@ -69,6 +72,8 @@ def _make_chunk(chunk_id: str = "11111111-1111-1111-1111-111111111111", **overri
         raw_text="def greet(): pass",
         start_byte=0,
         end_byte=18,
+        start_line=1,
+        end_line=1,
         parent_id=None,
         context_text="greets someone",
         embedding=[0.1, 0.2, 0.3],
@@ -133,6 +138,8 @@ def test_upsert_chunks_builds_payload_from_chunk_fields() -> None:
         symbol_name="greet",
         start_byte=10,
         end_byte=40,
+        start_line=2,
+        end_line=5,
         parent_id="parent-id",
         content_hash="abc123",
         raw_text="def greet_method(): pass",
@@ -150,6 +157,8 @@ def test_upsert_chunks_builds_payload_from_chunk_fields() -> None:
         "symbol_name": "greet",
         "start_byte": 10,
         "end_byte": 40,
+        "start_line": 2,
+        "end_line": 5,
         "parent_id": "parent-id",
         "content_hash": "abc123",
         "raw_text":"def greet_method(): pass",
@@ -255,12 +264,15 @@ def test_search_chunks_returns_chunk_search_results_from_hit_payload_and_score(m
 
     assert results == [
         {
+            "id": "11111111-1111-1111-1111-111111111111",
             "file_path": "src/main.py",
             "symbol_name": "greet",
             "class_name": "",
             "kind": "function",
             "start_byte": 0,
             "end_byte": 18,
+            "start_line": 1,
+            "end_line": 1,
             "raw_text": "def greet(): pass",
             "context_text": "greets someone",
             "score": 0.42,

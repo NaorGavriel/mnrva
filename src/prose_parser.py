@@ -54,6 +54,8 @@ def parse_prose_file(read_from: Path, *, repo_root: Path | None = None) -> Parse
             raw_text=section.text,
             start_byte=None,
             end_byte=None,
+            start_line=None,
+            end_line=None,
             parent_id=None,
         )
         for section in sections

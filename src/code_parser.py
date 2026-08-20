@@ -56,6 +56,8 @@ def extract_chunks(
             raw_text=_node_text(node, source),
             start_byte=node.start_byte,
             end_byte=node.end_byte,
+            start_line=node.start_point[0] + 1,
+            end_line=node.end_point[0] + 1,
             parent_id=None,
         )
         container_chunk_ids[node.id] = chunk.id
@@ -85,6 +87,8 @@ def extract_chunks(
             raw_text=_node_text(node, source),
             start_byte=node.start_byte,
             end_byte=node.end_byte,
+            start_line=node.start_point[0] + 1,
+            end_line=node.end_point[0] + 1,
             parent_id=parent_id,
         )
         chunks.append(chunk)
