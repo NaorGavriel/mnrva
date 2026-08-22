@@ -1,16 +1,11 @@
 import subprocess
 from pathlib import Path
-from typing import Annotated
 
 from langchain_core.tools import BaseTool, tool
-from pydantic import BaseModel, Field
-from qdrant_client import QdrantClient
-from query_agent.agent_schemas import Citation, GrepMatch
-from chunks import search_chunks
-from models import ChunkSearchResult
+from query_agent.agent_schemas import FileReadRequest, FileReadResult, GrepMatch
 
 
-def whole_file_read_tool(
+def read_file_range(
     repo_path: Path,
     file_path: str,
     start_line: int | None = None,
@@ -41,6 +36,22 @@ def whole_file_read_tool(
     return "".join(lines[start:end])
 
 
+def read_whole_files(repo_path: Path, files: list[FileReadRequest]) -> list[FileReadResult]:
+    """Read multiple files (or line ranges) from the repo clone at `repo_path` in one call.
+
+    Errors are caught per file - a missing/invalid path among the requested files doesn't
+    fail the whole call, it just carries its error on that file's own result.
+    """
+    results = []
+    for file in files:
+        try:
+            content = read_file_range(repo_path, file.file_path, file.start_line, file.end_line)
+            results.append(FileReadResult(file_path=file.file_path, start_line=file.start_line, end_line=file.end_line, content=content))
+        except Exception as exc:
+            results.append(FileReadResult(file_path=file.file_path, start_line=file.start_line, end_line=file.end_line, error=str(exc)))
+    return results
+
+
 def grep_search_tool(
     repo_path: Path,
     pattern: str,
@@ -68,33 +79,14 @@ def grep_search_tool(
         matches.append(GrepMatch(file_path=file_path, line_number=int(line_number), line_text=line_text))
     return matches
 
-def make_hybrid_search_tool(client: QdrantClient, collection_name: str) -> BaseTool:
-    """Build the `hybrid_search_tool`, bound to a Qdrant `client`/`collection_name` (`chunks.search_chunks`)."""
+def make_read_whole_files_tool(repo_path: Path) -> BaseTool:
+    """Build the `read_whole_files` tool, bound to the local repo clone at `repo_path`."""
 
-    def hybrid_search(
-        query: str,
-        top_k: int = 10,
-        language: str | None = None,
-        kind: str | None = None,
-    ) -> list[ChunkSearchResult]:
-        """Hybrid dense + BM25 search over the indexed codebase. Returns the top matching chunks."""
-        return search_chunks(client, collection_name, query, top_k, language=language, kind=kind)
+    def read_files(files: list[FileReadRequest]) -> list[FileReadResult]:
+        """Read multiple files (or 1-indexed inclusive line ranges of them) from the repository in one call."""
+        return read_whole_files(repo_path, files)
 
-    return tool("hybrid_search_tool")(hybrid_search)
-
-
-def make_whole_file_read_tool(repo_path: Path) -> BaseTool:
-    """Build the `whole_file_read_tool`, bound to the local repo clone at `repo_path`."""
-
-    def read_file(
-        file_path: str,
-        start_line: int | None = None,
-        end_line: int | None = None,
-    ) -> str:
-        """Read a file, or a 1-indexed inclusive line range of it, from the repository."""
-        return whole_file_read_tool(repo_path, file_path, start_line, end_line)
-
-    return tool("whole_file_read_tool")(read_file)
+    return tool("read_whole_files")(read_files)
 
 
 def make_grep_search_tool(repo_path: Path) -> BaseTool:

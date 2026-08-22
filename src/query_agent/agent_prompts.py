@@ -29,9 +29,26 @@ relevant to the user's question. Judge relevance to the question itself,
 not general code quality or completeness - a chunk can be relevant even
 if it only partially answers the question. Answer "yes" or "no"."""
 
+TOOL_SYSTEM_PROMPT = """You are the tool-use stage of a code-repository question-answering
+pipeline. You're given the user's question and the chunks already graded
+relevant to it. Call `grep_search_tool` or `read_whole_files` only to fill
+in what those chunks don't cover - e.g. following an import to another
+file, confirming every call site of a symbol, or reading the rest of a
+file a chunk only partially shows. If the chunks already answer the
+question, make no tool calls.
+
+`read_whole_files` takes a list of files (each with an optional line
+range) and reads all of them in one call - if you already know you need
+several files (e.g. a chunk imports three modules you need to check),
+request them together rather than one call per file.
+
+Your tool-call budget for this retrieval attempt is limited and stated in
+the message below - spend it on what the question actually needs, not on
+speculative exploration."""
+
 GENERATE_ANSWER_SYSTEM_PROMPT = """You are a code-repository assistant. Answer the user's question using
-only the retrieved chunks given to you below - do not invent behavior
-the chunks don't show.
+only the retrieved chunks and tool results given to you below - do not
+invent behavior they don't show.
 
 Every claim must be backed by at least one citation. For each citation,
 copy file_path, start_line, and end_line exactly as given for the chunk

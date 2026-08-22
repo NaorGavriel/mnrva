@@ -10,6 +10,7 @@ from models import Chunk
 from prose_parser import is_prose_file, parse_prose_file
 from registry import LanguageRegistry
 from repository_clone import clone_repository, delete_repository
+from query_agent.effort import MediumEffort
 from query_agent.graph import build_graph
 from repository_ingester import REPOSITORY_FILES_DIR, ingest_repository
 from repository_parser import list_source_files
@@ -144,8 +145,8 @@ def test_query_agent_graph() -> None:
     """Run the compiled query-agent graph end to end against live Qdrant/OpenAI.
 
     Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
-    graph = build_graph()
-    result = graph.invoke({"question": "how is authentication implemented?"})
+    graph = build_graph(REPOSITORY_FILES_DIR)
+    result = graph.invoke({"question": "how is authentication implemented?", "effort": MediumEffort()})
     print(f"question_type: {result['question_type']}")
     print(f"search_query: {result['search_query']!r}")
     print(f"search_filters: {result['search_filters']}")
