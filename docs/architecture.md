@@ -4,12 +4,12 @@
 
 A retrieval-augmented system for querying a code repository in natural language
 (e.g. "how is auth implemented?"). The system indexes a codebase into
-structure-aware, context-enriched chunks, answers developer queries through an
-agent with multiple retrieval tools, and keeps the index in sync as the
-codebase changes.
+structure-aware, context-enriched chunks, answers developer queries through a
+corrective-RAG agent, and keeps the index in sync as the codebase changes.
 
 Primary goal: structure-aware chunking, contextual retrieval, and
-agentic (multi-tool) retrieval - applied to the source code domain.
+corrective (retrieve/grade/generate/evaluate) retrieval - applied to the
+source code domain.
 
 ## 2. System Components
 
@@ -43,25 +43,18 @@ Ingestion also seeds the repo's `github_url`/`commit_sha` into Postgres
 
 Handles developer-facing natural language queries against the index.
 
-Given a query, the agent chooses between retrieval tools:
+Given a query, the agent retrieves via:
 
 - **Hybrid search** — dense vector similarity + BM25 keyword search over
   chunks, combined server-side by Qdrant's Query API (`prefetch` +
   `FusionQuery(fusion=RRF)`). Vector search catches conceptual matches; BM25
   catches exact identifier/error-string matches.
   Reciprocal Rank Fusion merges the two ranked lists by rank positions. Native to Qdrant.
-- **Whole-file read** — for queries that need full context a chunk can't
-  provide (e.g. "how is auth implemented end to end").
-- **Symbol / grep search** — for exact lookups (e.g. "where is `retry_with_backoff` defined").
 
-Cross-file context is handled by the agent's own tool loop — reading a
-file, noticing an import, and opening the imported file directly.
+
 
 Conversation state persists in Postgres (§3.5) via LangGraph's checkpointer,
-keyed by a per-conversation `thread_id`. Each agent process keeps its own
-local repo clone, refreshed by comparing its checked-out commit sha
-against Postgres at conversation start — independent of any other process
-running the agent. Full design: `docs/query_agent.md`.
+keyed by a per-conversation `thread_id`. Full design: `docs/query_agent.md`.
 
 ### 2.3 Refresh & Sync Pipeline
 

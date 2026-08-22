@@ -3,7 +3,7 @@ relevant to the user's question. Judge relevance to the question itself accordin
 Answer "yes" or "no"."""
 
 GENERATE_ANSWER_SYSTEM_PROMPT = """You are a code-repository assistant. Answer the user's question using
-only the retrieved chunks and tool results given to you below.
+only the retrieved chunks given to you below.
 If you don't know how to answer the question, say you don't know.
 
 Every claim must be backed by at least one citation. For each citation,
