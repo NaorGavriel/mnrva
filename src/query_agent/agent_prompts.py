@@ -19,24 +19,6 @@ correct, complete enough to be useful, and backed by its citations. "good" if it
 clearly missing something the question asked for.
 If "bad", explain what to look for on the next search attempt in 2-3 sentences."""
 
-
-TOOL_SYSTEM_PROMPT = """You are the tool-use stage of a code-repository question-answering
-pipeline. You're given the user's question and the relevant chunks to it.
-Call `grep_search_tool` or `read_whole_files` only to fill
-in what those chunks don't cover - e.g. following an import to another
-file, confirming every call site of a symbol, or reading the rest of a
-file a chunk only partially shows. If the chunks already answer the
-question, make no tool calls.
-
-`read_whole_files` takes a list of files (each with an optional line
-range) and reads all of them in one call - if you already know you need
-several files (e.g. a chunk imports three modules you need to check),
-request them together rather than one call per file.
-
-Your tool-call budget for this retrieval attempt is limited and stated in
-the message below - spend it on what the question actually needs, not on
-speculative exploration."""
-
 EVALUATE_QUESTION_SYSTEM_PROMPT = """You are the first stage of a code-repository question-answering pipeline.
 Given the user's question, reason about what kind of question it is:
 implementation (how something works), architecture (how components fit

@@ -50,29 +50,3 @@ class EvaluateAnswer(BaseModel):
         description="Why the answer does or doesn't hold up against the question - "
         "appended to search_query on a bad grade to give the retry a concrete reason to look different."
     )
-
-
-class GrepMatch(BaseModel):
-    """One matching line from `grep_search_tool`."""
-
-    file_path: str
-    line_number: int
-    line_text: str
-
-
-class FileReadRequest(BaseModel):
-    """One file (or 1-indexed inclusive line range of it) to read via `read_whole_files`."""
-
-    file_path: str
-    start_line: int | None = Field(default=None, description="Omit, along with end_line, to read the whole file.")
-    end_line: int | None = None
-
-
-class FileReadResult(BaseModel):
-    """One file's content from `read_whole_files`, or its read error if that file failed."""
-
-    file_path: str
-    start_line: int | None
-    end_line: int | None
-    content: str | None = None
-    error: str | None = None

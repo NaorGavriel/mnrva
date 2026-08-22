@@ -10,7 +10,7 @@ from query_agent.agent_prompts import (
     EVALUATE_ANSWER_SYSTEM_PROMPT,
     EVALUATE_QUESTION_SYSTEM_PROMPT,
     GENERATE_ANSWER_SYSTEM_PROMPT,
-    GRADE_DOCUMENT_SYSTEM_PROMPT,
+    GRADE_DOCUMENT_SYSTEM_PROMPT
 )
 from dotenv import load_dotenv
 from query_agent.agent_schemas import Answer, EvaluateAnswer, EvaluateQuestion, GradeDocument
