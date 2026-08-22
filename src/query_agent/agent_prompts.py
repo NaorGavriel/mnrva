@@ -15,10 +15,9 @@ claim, not a paraphrase."""
 
 EVALUATE_ANSWER_SYSTEM_PROMPT = """You are grading a generated answer against the original user question -
 not the retrieved chunks against the search query. Judge whether the answer resolves the question:
-correct, complete enough to be useful, and backed
-by its citations. "good" if it holds up, "bad" if it's wrong, evasive, or
-clearly missing something the question asked for. If "bad", explain
-what's missing or wrong"""
+correct, complete enough to be useful, and backed by its citations. "good" if it holds up, "bad" if it's wrong, evasive, or
+clearly missing something the question asked for.
+If "bad", explain what to look for on the next search attempt in 2-3 sentences."""
 
 
 TOOL_SYSTEM_PROMPT = """You are the tool-use stage of a code-repository question-answering
@@ -49,7 +48,5 @@ Produce:
 - synthesized_query: the question rewritten with any context that would
   help retrieval (e.g. expanding an abbreviation, naming the likely
   component).
-- filters: a language and/or kind to scope the search to, only if the
-  question clearly implies one - leave either null if unsure. `kind` must
-  be one of "class", "function", or "section" (prose/config content) -
-  never a category outside that set."""
+- filters: a language to scope the search to, only if the
+  question clearly implies one - leave null if unsure. """

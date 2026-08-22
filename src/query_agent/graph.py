@@ -17,7 +17,7 @@ from query_agent.state import AgentState
 
 load_dotenv()
 
-RETRIEVAL_ATTEMPTS_CAP = 5
+RETRIEVAL_ATTEMPTS_CAP = 3
 
 
 def _route_after_evaluate_answer(state: AgentState) -> str:

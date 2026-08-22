@@ -8,7 +8,6 @@ class QuestionFilters(BaseModel):
 
     language: str | None = Field(default=None, description="Programming language named or implied by the question, if any.")
     # Must match Chunk.kind (models.py) - an invalid value silently zeroes out the Qdrant filter match.
-    kind: Literal["class", "function", "section"] | None = Field(default=None, description="Chunk kind named or implied by the question, if any.")
 
 
 class EvaluateQuestion(BaseModel):
