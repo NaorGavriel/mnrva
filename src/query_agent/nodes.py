@@ -50,7 +50,7 @@ def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> 
             language=filters.get("language"),
             kind=filters.get("kind"),
         )
-        merged_chunks = {**state["retrieved_chunks"], **{r.id: r for r in chunks}}
+        merged_chunks = {**state["retrieved_chunks"], **{r["id"]: r for r in chunks}}
         return {
             "retrieved_chunks": merged_chunks,
             "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
@@ -128,9 +128,20 @@ def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
         result: EvaluateAnswer = structured_llm.invoke(
             [SystemMessage(EVALUATE_ANSWER_SYSTEM_PROMPT), HumanMessage(prompt)]
         )
-        updates: dict = {"answer_grade": result.grade, "evaluation_reasoning": result.reasoning}
+        answer_grading: dict = {"answer_grade": result.grade, "evaluation_reasoning": result.reasoning}
         if result.grade == "bad":
-            updates["search_query"] = f"{state['search_query']}\n\nPrevious attempt's answer fell short: {result.reasoning}"
-        return updates
+            answer_grading["search_query"] = f"{state['search_query']}\n\nPrevious attempt's answer fell short: {result.reasoning}"
+        return answer_grading
 
     return evaluate_answer_node
+
+
+
+def make_persist_agent_message_node() -> Callable[[AgentState], dict]:
+    def persist_agent_message_node(state: AgentState) -> dict:
+        agent_message = AIMessage(content=state["answer"].text,
+                                  additional_kwargs={"citations": [c.chunk_id for c in state["answer"].citations]})
+
+        return {"messages": agent_message}
+
+    return persist_agent_message_node

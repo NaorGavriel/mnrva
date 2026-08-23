@@ -10,8 +10,9 @@ from models import Chunk
 from prose_parser import is_prose_file, parse_prose_file
 from registry import LanguageRegistry
 from repository_clone import clone_repository, delete_repository
-from query_agent.effort import MediumEffort, BasicEffort
-from query_agent.graph import build_graph
+from query_agent.effort import MediumEffort, BasicEffort, Effort
+from query_agent.graph import build_graph, CompiledStateGraph
+from langchain_core.messages import HumanMessage
 from repository_ingester import REPOSITORY_FILES_DIR, ingest_repository
 from repository_parser import list_source_files
 
@@ -140,13 +141,30 @@ def test_find_chunk_id_collisions() -> None:
                 f"class_name={chunk.class_name!r} symbol_name={chunk.symbol_name!r}"
             )
 
+def start_turn(graph: CompiledStateGraph, thread_id: str, question: str, effort: Effort) -> dict:
+    return graph.invoke(
+        {
+            "question": question,
+            "messages": [HumanMessage(content=question)],
+            "effort": effort,
+            "retrieved_chunks": {},
+            "chunk_relevance": {},
+            "retrieval_attempts": 0,
+        },
+        {"configurable": {"thread_id": thread_id}},
+    )
+
 
 def test_query_agent_graph() -> None:
     """Run the compiled query-agent graph end to end against live Qdrant/OpenAI.
 
     Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
     graph = build_graph()
-    result = graph.invoke({"question": "List all the ways the API reponds to an invalid payload.", "effort": BasicEffort()})
+
+    q = "How is authentication implemented?"
+    result = start_turn(graph, "test-1", q, BasicEffort())
+
+
     print(f"question_type: {result['question_type']}")
     print(f"search_query: {result['search_query']!r}")
     print(f"search_filters: {result['search_filters']}")
@@ -163,6 +181,21 @@ def test_query_agent_graph() -> None:
         print(f"  {citation.file_path}:{citation.start_line}-{citation.end_line}: {citation.citation_text!r}")
 
 
+def test_query_agent_graph_persists_across_turns() -> None:
+    graph = build_graph()
+
+    q1 = "How does the backend handle invalid payload?"
+    q2 = "what is the reason an image can be invalid?"
+
+    result1 = start_turn(graph, "test-1", q1, BasicEffort())
+    print(f"turn 1 — messages: {len(result1['messages'])}")
+    print(f"turn 1 — answer:\n{result1['answer'].text}")
+
+    result2 = start_turn(graph, "test-1", q2, BasicEffort())
+    print(f"turn 2 — messages: {len(result2['messages'])}")
+    print(f"turn 2 — answer:\n{result2['answer'].text}")
+    
+
 if __name__ == "__main__":
     #test_embedding()
     #test_db_init()
@@ -171,4 +204,5 @@ if __name__ == "__main__":
     #test_enrich_chunks()
     #test_ingest_repository()
     #test_find_chunk_id_collisions()
-    test_query_agent_graph()
+    #test_query_agent_graph()
+    test_query_agent_graph_persists_across_turns()
