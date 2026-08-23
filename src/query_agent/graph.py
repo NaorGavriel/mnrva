@@ -11,6 +11,7 @@ from query_agent.effort import BasicEffort, MediumEffort, HighEffort
 
 from db.db_qdrant import COLLECTION_NAME, QDRANT_URL, init_client
 from query_agent.nodes import (
+    make_build_conversation_window_node,
     make_evaluate_answer_node,
     make_evaluate_question_node,
     make_generate_answer_node,
@@ -33,13 +34,14 @@ def _route_after_evaluate_answer(state: AgentState) -> str:
 
 
 def build_graph() -> CompiledStateGraph:
-    """Assemble the query agent's graph: evaluate_question -> retrieve_documents -> grade_documents ->
-    generate_answer -> evaluate_answer, looping back to retrieve_documents on a bad grade."""
+    """Assemble the query agent's graph: build_conversation_window -> evaluate_question -> retrieve_documents ->
+    grade_documents -> generate_answer -> evaluate_answer, looping back to retrieve_documents on a bad grade."""
     client = init_client(url=QDRANT_URL)
     llm = ChatOpenAI(model=os.environ["AGENT_MODEL"])
 
     # nodes
     graph = StateGraph(AgentState)
+    graph.add_node("build_conversation_window", make_build_conversation_window_node(client, COLLECTION_NAME))
     graph.add_node("evaluate_question", make_evaluate_question_node(llm))
     graph.add_node("retrieve_documents", make_retrieve_documents_node(client, COLLECTION_NAME))
     graph.add_node("grade_documents", make_grade_documents_node(llm))
@@ -48,7 +50,8 @@ def build_graph() -> CompiledStateGraph:
     graph.add_node("persist_agent_message", make_persist_agent_message_node())
     
     # edges
-    graph.add_edge(START, "evaluate_question")
+    graph.add_edge(START, "build_conversation_window")
+    graph.add_edge("build_conversation_window", "evaluate_question")
     graph.add_edge("evaluate_question", "retrieve_documents")
     graph.add_edge("retrieve_documents", "grade_documents")
     graph.add_edge("grade_documents", "generate_answer")

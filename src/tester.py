@@ -184,8 +184,9 @@ def test_query_agent_graph() -> None:
 def test_query_agent_graph_persists_across_turns() -> None:
     graph = build_graph()
 
-    q1 = "How does the backend handle invalid payload?"
-    q2 = "what is the reason an image can be invalid?"
+    q1 = "Is there a logging system implemented?"
+    q2 = "How does it work?"
+    q3 = "are you sure?"
 
     result1 = start_turn(graph, "test-1", q1, BasicEffort())
     print(f"turn 1 — messages: {len(result1['messages'])}")
@@ -195,6 +196,9 @@ def test_query_agent_graph_persists_across_turns() -> None:
     print(f"turn 2 — messages: {len(result2['messages'])}")
     print(f"turn 2 — answer:\n{result2['answer'].text}")
     
+    result3 = start_turn(graph, "test-1", q3, BasicEffort())
+    print(f"turn 3 — messages: {len(result3['messages'])}")
+    print(f"turn 3 — answer:\n{result3['answer'].text}")
 
 if __name__ == "__main__":
     #test_embedding()
