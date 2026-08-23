@@ -1,71 +1,86 @@
-import subprocess
-from pathlib import Path
-
-import pytest
-from pydantic import ValidationError
-
-import chunks
+from query_agent.tools import make_get_chunks_by_id_tool
 
 
-class FakePoint:
-    """Stands in for a Qdrant `ScoredPoint`."""
+class FakeRecord:
+    """Stands in for a Qdrant `Record`, as returned by `retrieve`."""
 
-    def __init__(self, payload: dict, score: float, id: str = "11111111-1111-1111-1111-111111111111") -> None:
+    def __init__(self, payload: dict, id: str) -> None:
         self.payload = payload
-        self.score = score
         self.id = id
 
 
-class FakeQueryResponse:
-    """Stands in for a Qdrant `QueryResponse`."""
-
-    def __init__(self, points: list[FakePoint]) -> None:
-        self.points = points
-
-
 class FakeQdrantClient:
-    """Records query_points calls and returns one canned hit, instead of hitting a real Qdrant server."""
+    """Records `retrieve` calls and returns a canned response, instead of hitting a real Qdrant server."""
 
-    def __init__(self) -> None:
-        self.query_points_calls: list[dict] = []
+    def __init__(self, retrieve_response: list[FakeRecord] | None = None) -> None:
+        self.retrieve_calls: list[dict] = []
+        self._retrieve_response = retrieve_response if retrieve_response is not None else []
 
-    def query_points(self, **kwargs) -> FakeQueryResponse:
-        self.query_points_calls.append(kwargs)
-        return FakeQueryResponse(
-            [
-                FakePoint(
-                    {
-                        "file_path": "src/main.py",
-                        "symbol_name": "greet",
-                        "class_name": "",
-                        "kind": "function",
-                        "start_byte": 0,
-                        "end_byte": 18,
-                        "start_line": 1,
-                        "end_line": 1,
-                        "raw_text": "def greet(): pass",
-                        "context_text": "greets someone",
-                    },
-                    score=0.9,
-                )
-            ]
-        )
+    def retrieve(self, **kwargs) -> list[FakeRecord]:
+        self.retrieve_calls.append(kwargs)
+        return self._retrieve_response
 
 
-@pytest.fixture
-def repo(tmp_path: Path) -> Path:
-    """A minimal real git repository on disk, so grep_search_tool can run real `git grep`."""
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    subprocess.run(["git", "init"], cwd=repo_path, check=True, capture_output=True)
-    (repo_path / "main.py").write_text("def greet():\n    return 'hello'\n\n\ndef farewell():\n    return 'bye'\n")
-    (repo_path / "nested").mkdir()
-    (repo_path / "nested" / "utils.py").write_text("def greet_loudly():\n    return 'HELLO'\n")
-    subprocess.run(["git", "add", "."], cwd=repo_path, check=True)
-    subprocess.run(
-        ["git", "-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "-m", "initial"],
-        cwd=repo_path,
-        check=True,
-        capture_output=True,
+def _make_record(chunk_id: str, **payload_overrides) -> FakeRecord:
+    payload = dict(
+        file_path="src/main.py",
+        symbol_name="greet",
+        class_name="",
+        kind="function",
+        start_byte=0,
+        end_byte=18,
+        start_line=1,
+        end_line=1,
+        raw_text="def greet(): pass",
+        context_text="greets someone",
+        language="python",
+        parent_id=None,
+        content_hash="hash",
     )
-    return repo_path
+    payload.update(payload_overrides)
+    return FakeRecord(payload, id=chunk_id)
+
+
+def test_get_chunks_by_id_tool_calls_retrieve_with_the_bound_collection_name() -> None:
+    client = FakeQdrantClient()
+    tool = make_get_chunks_by_id_tool(client, "code_chunks")
+
+    tool.invoke({"chunk_ids": ["11111111-1111-1111-1111-111111111111"]})
+
+    assert client.retrieve_calls[0]["collection_name"] == "code_chunks"
+
+
+def test_get_chunks_by_id_tool_includes_found_chunk_content() -> None:
+    client = FakeQdrantClient(
+        retrieve_response=[_make_record("11111111-1111-1111-1111-111111111111", raw_text="def greet(): pass")]
+    )
+    tool = make_get_chunks_by_id_tool(client, "code_chunks")
+
+    result = tool.invoke({"chunk_ids": ["11111111-1111-1111-1111-111111111111"]})
+
+    assert "src/main.py" in result
+    assert "def greet(): pass" in result
+
+
+def test_get_chunks_by_id_tool_reports_ids_not_found_instead_of_raising() -> None:
+    client = FakeQdrantClient(retrieve_response=[])
+
+    tool = make_get_chunks_by_id_tool(client, "code_chunks")
+    result = tool.invoke({"chunk_ids": ["99999999-9999-9999-9999-999999999999"]})
+
+    assert "Not found" in result
+    assert "99999999-9999-9999-9999-999999999999" in result
+
+
+def test_get_chunks_by_id_tool_reports_only_the_missing_ids_when_some_are_found() -> None:
+    client = FakeQdrantClient(
+        retrieve_response=[_make_record("11111111-1111-1111-1111-111111111111")]
+    )
+    tool = make_get_chunks_by_id_tool(client, "code_chunks")
+
+    result = tool.invoke(
+        {"chunk_ids": ["11111111-1111-1111-1111-111111111111", "99999999-9999-9999-9999-999999999999"]}
+    )
+
+    assert "99999999-9999-9999-9999-999999999999" in result
+    assert "src/main.py" in result
