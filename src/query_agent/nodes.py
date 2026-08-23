@@ -48,7 +48,6 @@ def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> 
             collection_name,
             state["search_query"],
             language=filters.get("language"),
-            kind=filters.get("kind"),
         )
         merged_chunks = {**state["retrieved_chunks"], **{r["id"]: r for r in chunks}}
         return {

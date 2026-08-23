@@ -110,7 +110,7 @@ def test_evaluate_question_node_returns_the_structured_fields() -> None:
     result = EvaluateQuestion(
         question_type="implementation",
         synthesized_query="how is auth implemented in the codebase",
-        filters=QuestionFilters(language=None, kind="function"),
+        filters=QuestionFilters(language=None),
         expects_multiple_retrievals=False,
     )
     llm = FakeLLM([result])
@@ -122,7 +122,7 @@ def test_evaluate_question_node_returns_the_structured_fields() -> None:
     assert output == {
         "question_type": "implementation",
         "search_query": "how is auth implemented in the codebase",
-        "search_filters": {"language": None, "kind": "function"},
+        "search_filters": {"language": None},
         "expects_multiple_retrievals": False,
     }
 
@@ -131,7 +131,7 @@ def test_retrieve_documents_node_searches_with_search_query_and_filters(monkeypa
     monkeypatch.setattr(chunks, "embed_text", lambda text: [0.1, 0.2, 0.3])
     client = FakeQdrantClient(query_response=FakeQueryResponse([_make_point(score=0.9)]))
     node = make_retrieve_documents_node(client, "code_chunks")
-    state: AgentState = {"search_query": "how does auth work?", "search_filters": {"language": None, "kind": None}}
+    state: AgentState = {"search_query": "how does auth work?", "search_filters": {"language": None}, "retrieved_chunks":{}}
 
     result = node(state)
 
@@ -148,8 +148,9 @@ def test_retrieve_documents_node_increments_retrieval_attempts_from_existing_sta
     node = make_retrieve_documents_node(client, "code_chunks")
     state: AgentState = {
         "search_query": "how does auth work?",
-        "search_filters": {"language": None, "kind": None},
+        "search_filters": {"language": None},
         "retrieval_attempts": 2,
+        "retrieved_chunks":{}
     }
 
     result = node(state)
@@ -191,7 +192,7 @@ def test_grade_documents_node_skips_already_graded_chunks() -> None:
 def test_generate_answer_node_uses_only_yes_labeled_chunks() -> None:
     answer = Answer(
         text="Auth is handled in authenticate().",
-        citations=[Citation(file_path="src/auth.py", start_line=1, end_line=1, citation_text="def authenticate(): ...")],
+        citations=[Citation(chunk_id="id-1",file_path="src/auth.py", start_line=1, end_line=1, citation_text="def authenticate(): ...")],
     )
     llm = FakeLLM([answer])
     node = make_generate_answer_node(llm)
