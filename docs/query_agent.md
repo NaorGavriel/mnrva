@@ -11,71 +11,88 @@ stages, with one loop-back edge for re-retrieval.
 
 ```mermaid
 graph TD
-    START([START]) --> EQ[evaluate_question]
+    START([START]) --> BCW[build_conversation_window]
+    BCW --> EQ[evaluate_question]
     EQ --> RD[retrieve_documents]
     RD --> GD[grade_documents]
     GD -->|yes-labeled chunks| GA[generate_answer]
     GA --> EA[evaluate_answer]
     EA -->|bad, attempts < cap<br/>reasoning appended to search_query| RD
-    EA -->|good, or cap hit| END([END])
+    EA -->|good, or cap hit| PM[persist_agent_message]
+    PM --> END([END])
 ```
 
 ## Nodes
 
 All LLM nodes run on `AGENT_MODEL` (env var).
 
-1. **`evaluate_question`** (LLM, structured output) — reasons about the
+1. **`build_conversation_window`** (not an LLM call) — turns the
+   just-completed previous turn into one `conversation_window` entry
+   (question, answer, and `cited_context` — the previous answer's cited
+   chunks re-fetched live via `get_chunks_by_id`, §2.1, so a follow-up
+   grounds in what the code says *now*), appends it, and trims to the
+   most recent `CONVERSATION_WINDOW_TURNS` (env var). No-op on the first
+   turn. Also formats the window into `conversation_history`, a single
+   text block every other LLM node in this turn prepends to its own
+   prompt, computed once here.
+
+2. **`evaluate_question`** (LLM, structured output) — reasons about the
    question: implementation, architecture, a heuristic/design decision, a
    specific named symbol, or a workflow. Produces `synthesized_query`
-   (question + any added context — this, not the raw question, is what
-   gets searched), `filters` (`language`/`kind`), and
-   `expects_multiple_retrievals` — computed but currently unused by any
-   edge.
+   (question + any added context - this is what
+   gets searched), `filters` (`language`).
 
-2. **`retrieve_documents`** (not an LLM call) — calls `search_chunks`
+3. **`retrieve_documents`** (not an LLM call) — calls `search_chunks`
    (§2.1) with `search_query` + `filters`. Hits merge into
    `retrieved_chunks`, keyed by chunk id, so a chunk returned by more
    than one attempt doesn't duplicate.
 
-3. **`grade_documents`** (LLM, structured output, one call per
+4. **`grade_documents`** (LLM, structured output, one call per
    newly-retrieved chunk) — labels each chunk not yet graded `yes`/`no`
    for relevance to the user's question. Labels persist across attempts;
    a chunk is graded once.
 
-4. **`generate_answer`** (LLM, structured output) — question +
-   `yes`-labeled chunks → `Answer` (§2.2).
+5. **`generate_answer`** (LLM, structured output) — question +
+   `yes`-labeled chunks → `Answer` (§2.2). Each chunk shown to the model
+   includes its real `chunk_id`, which the model must copy into its
+   `Citation` (not invent) — `build_conversation_window` depends on that
+   id being real to re-fetch the chunk later.
 
-5. **`evaluate_answer`** (LLM, structured output) — grades the generated
+6. **`evaluate_answer`** (LLM, structured output) — grades the generated
    `Answer` against the *original user question* (not the retrieved
    chunks against the search query — a distinct judgment from
-   `grade_documents`'s per-chunk relevance). `good` → END. `bad`, under
-   the attempt cap → loops back to `retrieve_documents` with the
-   evaluator's reasoning appended to `search_query` (additive, doesn't
-   replace `synthesized_query`/`filters`). `bad`, cap hit → END anyway,
-   answer stands.
+   `grade_documents`'s per-chunk relevance). `good` or cap hit →
+   `persist_agent_message`. `bad`, under the attempt cap → loops back to
+   `retrieve_documents` with the evaluator's reasoning appended to
+   `search_query` (additive, doesn't replace `synthesized_query`/`filters`).
+
+7. **`persist_agent_message`** (not an LLM call) — runs once per turn,
+   after `evaluate_answer` reaches a terminal state. Appends an
+   `AIMessage` built from `state.answer` to `messages` (§2.2) — the only
+   node that writes to `messages` on the answer side of a turn; the
+   `HumanMessage` for the question is appended by the caller before
+   `graph.invoke()` (§2.3).
 
 ## Edges
 
-1. `START → evaluate_question`
-2. `evaluate_question → retrieve_documents`
-3. `retrieve_documents → grade_documents`
-4. `grade_documents → generate_answer`
-5. `generate_answer → evaluate_answer`
-6. `evaluate_answer → retrieve_documents` — `bad` and `retrieval_attempts < cap`
-7. `evaluate_answer → END` — `good`, or cap hit
+1. `START → build_conversation_window`
+2. `build_conversation_window → evaluate_question`
+3. `evaluate_question → retrieve_documents`
+4. `retrieve_documents → grade_documents`
+5. `grade_documents → generate_answer`
+6. `generate_answer → evaluate_answer`
+7. `evaluate_answer → retrieve_documents` — `bad` and `retrieval_attempts < cap`
+8. `evaluate_answer → persist_agent_message` — `good`, or cap hit
+9. `persist_agent_message → END`
 
 ## 2.1 Retrieval
 
 - **`search_chunks`** (`chunks.py`) — called directly by
-  `retrieve_documents`, not agent-invoked. Uses Qdrant's Query API:
-  `prefetch=[Prefetch(query=embed_text(query_text), using=DENSE_VECTOR_NAME), Prefetch(query=Document(text=query_text, model="Qdrant/bm25"), using=SPARSE_VECTOR_NAME)]`,
-  `query=FusionQuery(fusion=Fusion.RRF)`, optional `Filter` on
-  `language`/`kind`. Returns payload + score per hit — `file_path`,
-  `symbol_name`, `class_name`, `kind`, `start_byte`, `end_byte`,
-  `raw_text`, `context_text`, `score`.
+  `retrieve_documents`. Uses Qdrant's Query API.
 
-  Cross-file context comes from re-running `search_chunks`
-  on the `evaluate_answer → retrieve_documents` loop-back edge.
+- **`get_chunks_by_id`** (`chunks.py`) — a lookup, not a search: one
+  batched Qdrant `retrieve()` by chunk id. Called by
+  `build_conversation_window`.
 
 ## 2.2 Conversation & agent state
 
@@ -85,36 +102,55 @@ LangGraph's Postgres checkpointer persists all of `AgentState` per
 `PostgresSaver` over `db_postgres.py`'s connection.
 
 ```python
+class TurnContext(TypedDict):
+    question: str
+    answer: str
+    cited_context: str  # formatted from cited chunks' context_text, "" if none cited
+
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
+    question: str
+    conversation_window: list[TurnContext]
+    conversation_history: str
     search_query: str
     search_filters: dict  # {"language": str}
     expects_multiple_retrievals: bool
-    retrieved_chunks: Annotated[dict[str, ChunkSearchResult], merge_by_key]  # keyed by chunk id
-    chunk_relevance: dict[str, Literal["yes", "no"]]  # keyed by chunk id
+    retrieved_chunks: dict[str, ChunkSearchResult]
+    chunk_relevance: dict[str, Literal["yes", "no"]]
     retrieval_attempts: int
     answer: Answer | None
     answer_grade: Literal["good", "bad"] | None
     evaluation_reasoning: str | None
 ```
 
-`retrieved_chunks` needs a custom merge reducer (parallel to
-`add_messages` on `messages`) — LangGraph's default TypedDict field
-semantics overwrite on each node return, which would drop everything
-from prior attempts.
+Only `messages` needs the `add_messages` reducer — it's written across
+turns by two different writers (the caller, `persist_agent_message`).
+Every other field, including `conversation_window`, has exactly one
+writer node, which manages its own merge/trim in plain code; LangGraph's
+default overwrite-on-return semantics are already correct for those, so
+no custom reducer is needed.
 
 `Answer = {text: str, citations: list[Citation]}`. `Citation =
-{file_path, start_line, end_line, citation_text}` — `citation_text` is
-the quoted source excerpt itself (code or prose), not just its location.
+{chunk_id, file_path, start_line, end_line, citation_text}` —
+`citation_text` is the quoted source excerpt itself (code or prose), not
+just its location. Each turn's answer flattens to:
+
+```python
+AIMessage(
+    content=answer.text,
+    additional_kwargs={"citations": [c.chunk_id for c in answer.citations]},
+)
+```
 
 ## 2.3 Life-cycle
 
 1. Caller starts a conversation with some `thread_id`, against some
-   already-running agent process.
-2. The graph runs `evaluate_question → retrieve_documents →
-   grade_documents → generate_answer → evaluate_answer` once,
-   correcting via re-retrieval (up to the attempt cap) if the answer
-   grades bad.
+   already-running agent process, appending a `HumanMessage(question)` to
+   `messages` before calling `graph.invoke()`.
+2. The graph runs `build_conversation_window → evaluate_question →
+   retrieve_documents → grade_documents → generate_answer →
+   evaluate_answer` once, correcting via re-retrieval (up to the attempt
+   cap) if the answer grades bad, then `persist_agent_message`.
 3. Postgres checkpoints `AgentState` under `thread_id` — visible to any
    process handling a follow-up on that `thread_id`, not just the one
    that handled turn 1.
@@ -125,6 +161,8 @@ the quoted source excerpt itself (code or prose), not just its location.
 
 - **`retrieval_attempts` cap** — flat cap enforced in `graph.py`
   (`RETRIEVAL_ATTEMPTS_CAP`).
+- **`CONVERSATION_WINDOW_TURNS` cap** (env var) — bounds
+  `conversation_window`; oldest turn evicted once over the cap.
 
 ## 2.5 Decisions & reasoning (recap)
 
@@ -145,8 +183,3 @@ the quoted source excerpt itself (code or prose), not just its location.
   answer catches that, and folding the evaluator's reasoning into the
   next `search_query` gives the retry a concrete reason to look
   different from the first attempt.
-
-## 2.6 Known limitations / open decisions
-
-- `expects_multiple_retrievals` computed but unused by any edge (§ Nodes,
-  item 1).
