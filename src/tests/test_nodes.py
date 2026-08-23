@@ -1,5 +1,5 @@
 import chunks
-from query_agent.agent_schemas import (
+from query_agent.schemas import (
     Answer,
     Citation,
     EvaluateAnswer,

@@ -13,7 +13,7 @@ from query_agent.agent_prompts import (
     GRADE_DOCUMENT_SYSTEM_PROMPT
 )
 from dotenv import load_dotenv
-from query_agent.agent_schemas import Answer, EvaluateAnswer, EvaluateQuestion, GradeDocument
+from query_agent.schemas import Answer, EvaluateAnswer, EvaluateQuestion, GradeDocument
 from query_agent.state import AgentState
 
 load_dotenv()

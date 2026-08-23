@@ -4,7 +4,7 @@ from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
 from models import ChunkSearchResult
-from query_agent.agent_schemas import Answer
+from query_agent.schemas import Answer
 from query_agent.effort import Effort
 
 

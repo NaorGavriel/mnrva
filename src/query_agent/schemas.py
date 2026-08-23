@@ -1,5 +1,4 @@
 from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
@@ -27,7 +26,7 @@ class GradeDocument(BaseModel):
 
 class Citation(BaseModel):
     """A source-code location backing a claim in the agent's answer."""
-
+    chunk_id: str
     file_path: str
     # None for prose-section chunks, which don't carry a line range (prose_parser.py).
     start_line: int | None
