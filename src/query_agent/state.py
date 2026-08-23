@@ -8,11 +8,6 @@ from query_agent.agent_schemas import Answer
 from query_agent.effort import Effort
 
 
-def retrieved_chunks_reducer(existing: dict[str, ChunkSearchResult], new: dict[str, ChunkSearchResult]) -> dict[str, ChunkSearchResult]:
-    """Merge id-keyed chunk dicts across retrieval attempts; new hits take precedence on id collision."""
-    return {**existing, **new}
-
-
 class AgentState(TypedDict):
     """LangGraph state for one query-agent turn: the question, its evaluation, retrieved chunks, and the generated answer."""
 
@@ -23,7 +18,7 @@ class AgentState(TypedDict):
     search_query: str
     search_filters: dict
     expects_multiple_retrievals: bool
-    retrieved_chunks: Annotated[dict[str, ChunkSearchResult], retrieved_chunks_reducer]
+    retrieved_chunks: dict[str, ChunkSearchResult]
     chunk_relevance: dict[str, Literal["yes", "no"]]
     retrieval_attempts: int
     answer: Answer | None
