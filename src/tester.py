@@ -1,3 +1,4 @@
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -182,22 +183,27 @@ def test_query_agent_graph() -> None:
 
 
 def test_query_agent_graph_persists_across_turns() -> None:
+    build_start = time.perf_counter()
     graph = build_graph()
+    print(f"build_graph: {time.perf_counter() - build_start:.2f}s")
 
     q1 = "Is there a logging system implemented?"
     q2 = "How does it work?"
     q3 = "are you sure?"
 
-    result1 = start_turn(graph, "test-1", q1, BasicEffort())
-    print(f"turn 1 — messages: {len(result1['messages'])}")
+    turn_start = time.perf_counter()
+    result1 = start_turn(graph, "test-3", q1, BasicEffort())
+    print(f"turn 1: {time.perf_counter() - turn_start:.2f}s — messages: {len(result1['messages'])}")
     print(f"turn 1 — answer:\n{result1['answer'].text}")
 
-    result2 = start_turn(graph, "test-1", q2, BasicEffort())
-    print(f"turn 2 — messages: {len(result2['messages'])}")
+    turn_start = time.perf_counter()
+    result2 = start_turn(graph, "test-3", q2, BasicEffort())
+    print(f"turn 2: {time.perf_counter() - turn_start:.2f}s — messages: {len(result2['messages'])}")
     print(f"turn 2 — answer:\n{result2['answer'].text}")
-    
-    result3 = start_turn(graph, "test-1", q3, BasicEffort())
-    print(f"turn 3 — messages: {len(result3['messages'])}")
+
+    turn_start = time.perf_counter()
+    result3 = start_turn(graph, "test-3", q3, BasicEffort())
+    print(f"turn 3: {time.perf_counter() - turn_start:.2f}s — messages: {len(result3['messages'])}")
     print(f"turn 3 — answer:\n{result3['answer'].text}")
 
 if __name__ == "__main__":

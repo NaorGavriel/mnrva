@@ -4,6 +4,7 @@ from qdrant_client import QdrantClient
 
 from chunks import upsert_chunks
 from code_parser import parse_code_file
+from db.db_postgres import ensure_repo_metadata_table, init_pool
 from db.db_qdrant import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_client
 from embeddings import embed_chunks
 from enrichment import enrich_chunks
@@ -35,6 +36,9 @@ def ingest_repository(
     registry = registry or LanguageRegistry()
     client = client or init_client(url=QDRANT_URL)
     ensure_collection(client, COLLECTION_NAME)
+
+    pool = init_pool()
+    ensure_repo_metadata_table(pool=pool)
 
     repo_path = clone_repository(github_url, REPOSITORY_FILES_DIR)
 

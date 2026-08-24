@@ -4,10 +4,8 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from query_agent.schemas import Answer
-from query_agent.effort import BasicEffort, MediumEffort, HighEffort
+from query_agent.checkpointer_postgres import init_checkpointer
+from db.db_postgres import init_pool
 
 from db.db_qdrant import COLLECTION_NAME, QDRANT_URL, init_client
 from query_agent.nodes import (
@@ -23,8 +21,7 @@ from query_agent.state import AgentState
 
 load_dotenv()
 
-RETRIEVAL_ATTEMPTS_CAP = 3
-
+RETRIEVAL_ATTEMPTS_CAP = 1
 
 def _route_after_evaluate_answer(state: AgentState) -> str:
     """Loop back to retrieve_documents on a bad grade under the attempt cap; otherwise end the turn."""
@@ -63,7 +60,8 @@ def build_graph() -> CompiledStateGraph:
     graph.add_edge("persist_agent_message", END)
 
     # checkpointer
-    serde = JsonPlusSerializer(allowed_msgpack_modules=[BasicEffort, Answer, MediumEffort, HighEffort])
-    checkpointer = InMemorySaver(serde=serde)
+    pool = init_pool()
+    checkpointer = init_checkpointer(pool=pool)
+
 
     return graph.compile(checkpointer=checkpointer)

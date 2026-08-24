@@ -1,5 +1,6 @@
 import os
 
+from langgraph.checkpoint.postgres import PostgresSaver
 from psycopg.conninfo import make_conninfo
 from psycopg_pool import ConnectionPool
 
@@ -17,7 +18,7 @@ def _conninfo_from_env() -> str:
 def init_pool(conninfo: str | None = None) -> ConnectionPool:
     """Open a psycopg connection pool. `conninfo` defaults to one built from
     POSTGRES_USER/PORT/PASSWORD/HOST/DB."""
-    return ConnectionPool(conninfo or _conninfo_from_env(), open=True)
+    return ConnectionPool(conninfo or _conninfo_from_env(), open=True, kwargs={"autocommit": True})
 
 
 def ensure_repo_metadata_table(pool: ConnectionPool) -> None:
@@ -34,3 +35,8 @@ def ensure_repo_metadata_table(pool: ConnectionPool) -> None:
             )
             """
         )
+
+
+def ensure_checkpointer_tables(pool: ConnectionPool) -> None:
+    """Create LangGraph's checkpointer tables if they don't already exist. Idempotent."""
+    PostgresSaver(conn=pool).setup()
