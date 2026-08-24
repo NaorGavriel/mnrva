@@ -23,7 +23,7 @@ from repository_parser import list_source_files, list_unwanted_files
 REPOSITORY_FILES_DIR = Path("repository_files")
 
 
-def ingest_repository(
+async def ingest_repository(
     github_url: str,
     registry: GrammarRegistry | None = None,
     client: QdrantClient | None = None,
@@ -52,7 +52,7 @@ def ingest_repository(
 
     total_chunks = 0
     for parsed in parsed_files:
-        enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
+        enriched = await enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
         embedded = embed_chunks(enriched)
         upsert_chunks(client, COLLECTION_NAME, embedded)
         total_chunks += len(embedded)
