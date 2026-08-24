@@ -9,6 +9,7 @@ from db.db_qdrant import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_cl
 from embeddings import embed_chunks
 from enrichment import enrich_chunks
 from languages import get_language, is_code_file
+from models import ParsedFile
 from prose_parser import is_prose_file, parse_prose_file
 from registry import GrammarRegistry, LanguageRegistry
 from repository_clone import (
@@ -47,16 +48,10 @@ def ingest_repository(
 
     commit_sha = get_current_commit_sha(repo_path)
 
-    total_chunks = 0
-    for relative_path in list_source_files(repo_path):
-        if is_code_file(relative_path):
-            language = get_language(relative_path)
-            parsed = parse_code_file(repo_path / relative_path, language, registry, repo_root=repo_path)
-        elif is_prose_file(relative_path):
-            parsed = parse_prose_file(repo_path / relative_path, repo_root=repo_path)
-        else:
-            continue  # allowlisted but unroutable: neither a code nor prose extension
+    parsed_files = parse_repository_files(repo_path, registry)
 
+    total_chunks = 0
+    for parsed in parsed_files:
         enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
         embedded = embed_chunks(enriched)
         upsert_chunks(client, COLLECTION_NAME, embedded)
@@ -65,3 +60,24 @@ def ingest_repository(
     delete_repository(repo_path)
     print(f"upserted {total_chunks} chunks from {github_url} @ {commit_sha}")
     return commit_sha
+
+
+def parse_repository_files(repo_path: Path, registry: GrammarRegistry) -> list[ParsedFile]:
+    """Parse every wanted file under `repo_path` into a `ParsedFile`.
+
+    Routes each file to tree-sitter (code) or the prose splitter; a file
+    that's allowlisted but unroutable to either is skipped. This is the
+    parse phase: it only reads and chunks files, feeding the enrichment
+    pipeline that follows.
+    """
+    parsed_files: list[ParsedFile] = []
+    for relative_path in list_source_files(repo_path):
+        if is_code_file(relative_path):
+            language = get_language(relative_path)
+            parsed = parse_code_file(repo_path / relative_path, language, registry, repo_root=repo_path)
+        elif is_prose_file(relative_path):
+            parsed = parse_prose_file(repo_path / relative_path, repo_root=repo_path)
+        else:
+            continue  # allowlisted but unroutable: neither a code nor prose extension
+        parsed_files.append(parsed)
+    return parsed_files

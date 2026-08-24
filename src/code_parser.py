@@ -26,7 +26,7 @@ def parse_code_file(
     config = LANGUAGE_CONFIG[path.suffix]
     chunks = extract_chunks(tree, source, config, path)
     imports = _extract_imports(tree, source, config)
-    return ParsedFile(chunks=chunks, source=source.decode("utf-8"), imports=imports)
+    return ParsedFile(path=path, chunks=chunks, source=source.decode("utf-8"), imports=imports)
 
 
 def extract_chunks(

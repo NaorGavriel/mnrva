@@ -60,7 +60,7 @@ def parse_prose_file(read_from: Path, *, repo_root: Path | None = None) -> Parse
         )
         for section in sections
     ]
-    return ParsedFile(chunks=chunks, source=source, imports=[])
+    return ParsedFile(path=path, chunks=chunks, source=source, imports=[])
 
 
 def _cap_oversized(sections: list[_Section]) -> list[_Section]:
