@@ -6,6 +6,7 @@ from query_agent.schemas import (
     Citation,
     EvaluateAnswer,
     EvaluateQuestion,
+    GeneratedAnswer,
     GradeDocument,
     QuestionFilters,
 )
@@ -356,11 +357,8 @@ def test_grade_documents_node_skips_already_graded_chunks() -> None:
 
 
 def test_generate_answer_node_uses_only_yes_labeled_chunks() -> None:
-    answer = Answer(
-        text="Auth is handled in authenticate().",
-        citations=[Citation(chunk_id="id-1",file_path="src/auth.py", start_line=1, end_line=1, citation_text="def authenticate(): ...")],
-    )
-    llm = FakeLLM([answer])
+    generated = GeneratedAnswer(text="Auth is handled in authenticate().", cited_chunk_ids=["id-1"])
+    llm = FakeLLM([generated])
     node = make_generate_answer_node(llm)
     state: AgentState = {
         "question": "how does auth work?",
@@ -373,16 +371,36 @@ def test_generate_answer_node_uses_only_yes_labeled_chunks() -> None:
 
     result = node(state)
 
-    assert result == {"answer": answer}
+    assert result == {
+        "answer": Answer(
+            text="Auth is handled in authenticate().",
+            citations=[Citation(chunk_id="id-1", file_path="src/auth.py", start_line=1, end_line=1, citation_text="def authenticate(): ...")],
+        )
+    }
     prompt = llm.structured.invoke_calls[0][1].content
     assert "chunk_id=id-1" in prompt
     assert "src/auth.py" in prompt
     assert "src/unrelated.py" not in prompt
 
 
+def test_generate_answer_node_drops_hallucinated_chunk_ids() -> None:
+    generated = GeneratedAnswer(text="Auth is handled in authenticate().", cited_chunk_ids=["id-1", "not-a-real-id"])
+    llm = FakeLLM([generated])
+    node = make_generate_answer_node(llm)
+    state: AgentState = {
+        "question": "how does auth work?",
+        "retrieved_chunks": {"id-1": _search_result(id="id-1", file_path="src/auth.py", symbol_name="authenticate")},
+        "chunk_relevance": {"id-1": "yes"},
+    }
+
+    result = node(state)
+
+    assert [c.chunk_id for c in result["answer"].citations] == ["id-1"]
+
+
 def test_generate_answer_node_folds_conversation_window_into_the_prompt() -> None:
-    answer = Answer(text="It also handles images.", citations=[])
-    llm = FakeLLM([answer])
+    generated = GeneratedAnswer(text="It also handles images.", cited_chunk_ids=[])
+    llm = FakeLLM([generated])
     node = make_generate_answer_node(llm)
     state: AgentState = {
         "question": "what if it's an image?",

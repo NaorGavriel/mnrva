@@ -13,7 +13,7 @@ from query_agent.agent_prompts import (
     GRADE_DOCUMENT_SYSTEM_PROMPT
 )
 from dotenv import load_dotenv
-from query_agent.schemas import Answer, EvaluateAnswer, EvaluateQuestion, GradeDocument
+from query_agent.schemas import Answer, Citation, EvaluateAnswer, EvaluateQuestion, GeneratedAnswer, GradeDocument
 from query_agent.state import AgentState, TurnContext
 
 load_dotenv()
@@ -104,6 +104,7 @@ def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> 
             collection_name,
             state["search_query"],
             language=filters.get("language"),
+            top_k=5
         )
         merged_chunks = {**state["retrieved_chunks"], **{r["id"]: r for r in chunks}}
         return {
@@ -146,22 +147,40 @@ def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
 
 
 def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
-    """Build the `generate_answer` node: yes-labeled chunks + question -> a structured `Answer` with citations."""
-    structured_llm = llm.with_structured_output(Answer)
+    """Build the `generate_answer` node: yes-labeled chunks + question -> a structured `Answer` with citations.
+
+    The LLM only produces the answer text and the chunk_ids it drew from; citation metadata
+    (file_path, line range, text) is resolved locally from the already-retrieved chunks.
+    """
+    structured_llm = llm.with_structured_output(GeneratedAnswer)
 
     def generate_answer_node(state: AgentState) -> dict:
         relevant_chunks = [chunk for chunk in state["retrieved_chunks"].values() if state["chunk_relevance"].get(chunk["id"]) == "yes"]
-        
+        chunks_by_id = {chunk["id"]: chunk for chunk in relevant_chunks}
+
         context = "\n\n".join(
             f"chunk_id={chunk['id']} file_path={chunk['file_path']} start_line={chunk['start_line']} end_line={chunk['end_line']}\n"
             f"{chunk['symbol_name']}:\n{chunk['raw_text']}"
             for chunk in relevant_chunks
         )
         prompt = f"{state.get('conversation_history', '')}User's question:\n{state['question']}\n\nRetrieved chunks:\n{context}"
-        answer: Answer = structured_llm.invoke(
+
+        generated: GeneratedAnswer = structured_llm.invoke(
             [SystemMessage(GENERATE_ANSWER_SYSTEM_PROMPT), HumanMessage(prompt)]
         )
-        return {"answer": answer}
+
+        citations = [
+            Citation(
+                chunk_id=chunk_id,
+                file_path=chunks_by_id[chunk_id]["file_path"],
+                start_line=chunks_by_id[chunk_id]["start_line"],
+                end_line=chunks_by_id[chunk_id]["end_line"],
+                citation_text=chunks_by_id[chunk_id]["raw_text"],
+            )
+            for chunk_id in generated.cited_chunk_ids
+            if chunk_id in chunks_by_id  # drop any hallucinated/unknown chunk_id
+        ]
+        return {"answer": Answer(text=generated.text, citations=citations)}
 
     return generate_answer_node
 
@@ -174,7 +193,7 @@ def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
     def evaluate_answer_node(state: AgentState) -> dict:
         answer = state["answer"]
         citations = "\n".join(
-            f"- {citation.file_path}:{citation.start_line}-{citation.end_line}: {citation.citation_text}"
+            f"- {citation.file_path}:{citation.start_line}-{citation.end_line}"
             for citation in answer.citations
         )
         prompt = (

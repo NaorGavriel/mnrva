@@ -163,23 +163,23 @@ def test_query_agent_graph() -> None:
     graph = build_graph()
 
     q = "How is authentication implemented?"
-    result = start_turn(graph, "test-1", q, BasicEffort())
+    result = start_turn(graph, "test-4", q, BasicEffort())
 
 
-    print(f"question_type: {result['question_type']}")
-    print(f"search_query: {result['search_query']!r}")
-    print(f"search_filters: {result['search_filters']}")
-    print(f"retrieval_attempts: {result['retrieval_attempts']}")
-    print(f"retrieved {len(result['retrieved_chunks'])} chunks")
-    for chunk in result["retrieved_chunks"].values():
-        relevance = result["chunk_relevance"].get(chunk["id"])
-        print(f"  [{relevance}] {chunk['file_path']} ({chunk['symbol_name']}) score={chunk['score']:.3f}")
-    print(f"\nanswer_grade: {result['answer_grade']}")
-    print(f"evaluation_reasoning: {result['evaluation_reasoning']}")
+    #print(f"question_type: {result['question_type']}")
+    #print(f"search_query: {result['search_query']!r}")
+    #print(f"search_filters: {result['search_filters']}")
+    #print(f"retrieval_attempts: {result['retrieval_attempts']}")
+    #print(f"retrieved {len(result['retrieved_chunks'])} chunks")
+    #for chunk in result["retrieved_chunks"].values():
+    #    relevance = result["chunk_relevance"].get(chunk["id"])
+    #    print(f"  [{relevance}] {chunk['file_path']} ({chunk['symbol_name']}) score={chunk['score']:.3f}")
+    #print(f"\nanswer_grade: {result['answer_grade']}")
+    #print(f"evaluation_reasoning: {result['evaluation_reasoning']}")
     print(f"\nanswer:\n{result['answer'].text}")
-    print("\ncitations:")
-    for citation in result["answer"].citations:
-        print(f"  {citation.file_path}:{citation.start_line}-{citation.end_line}: {citation.citation_text!r}")
+    #print("\ncitations:")
+    #for citation in result["answer"].citations:
+    #    print(f"  {citation.file_path}:{citation.start_line}-{citation.end_line}")
 
 
 def test_query_agent_graph_persists_across_turns() -> None:
@@ -192,17 +192,17 @@ def test_query_agent_graph_persists_across_turns() -> None:
     q3 = "are you sure?"
 
     turn_start = time.perf_counter()
-    result1 = start_turn(graph, "test-3", q1, BasicEffort())
+    result1 = start_turn(graph, "test-6", q1, BasicEffort())
     print(f"turn 1: {time.perf_counter() - turn_start:.2f}s — messages: {len(result1['messages'])}")
     print(f"turn 1 — answer:\n{result1['answer'].text}")
 
     turn_start = time.perf_counter()
-    result2 = start_turn(graph, "test-3", q2, BasicEffort())
+    result2 = start_turn(graph, "test-6", q2, BasicEffort())
     print(f"turn 2: {time.perf_counter() - turn_start:.2f}s — messages: {len(result2['messages'])}")
     print(f"turn 2 — answer:\n{result2['answer'].text}")
 
     turn_start = time.perf_counter()
-    result3 = start_turn(graph, "test-3", q3, BasicEffort())
+    result3 = start_turn(graph, "test-6", q3, BasicEffort())
     print(f"turn 3: {time.perf_counter() - turn_start:.2f}s — messages: {len(result3['messages'])}")
     print(f"turn 3 — answer:\n{result3['answer'].text}")
 

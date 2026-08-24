@@ -33,11 +33,18 @@ class Citation(BaseModel):
     citation_text: str # could be code or free form text if it's from .md for example
 
 
-class Answer(BaseModel):
-    """Structured output of the `generate_answer` node: the answer text plus its backing citations."""
+class GeneratedAnswer(BaseModel):
+    """Structured output the LLM produces in `generate_answer`: the answer text plus which
+    retrieved chunks it drew from."""
 
     text: str
-    citations: list[Citation] = Field(description="At least one citation backing every claim made in text.")
+    cited_chunk_ids: list[str] = Field(description="chunk_id of every retrieved chunk the answer draws from - copied exactly as given.")
+
+
+class Answer(BaseModel):
+    """The query agent's final answer: text plus its backing citations."""
+    text: str
+    citations: list[Citation]
 
 
 class EvaluateAnswer(BaseModel):

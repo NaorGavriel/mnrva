@@ -11,12 +11,8 @@ understand what the question refers back to (e.g. "it", "that function"),
 but answer only the current question.
 If you don't know how to answer the question, say you don't know.
 
-Every claim must be backed by at least one citation. For each citation,
-copy chunk_id, file_path, start_line, and end_line exactly as given for
-the chunk it's drawn from - use null for start_line/end_line if the
-chunk's own values are null.
-citation_text is the exact quoted excerpt from that chunk backing the
-claim, not a paraphrase."""
+List the chunk_id of every retrieved chunk your answer draws from in
+cited_chunk_ids, copied exactly as given."""
 
 EVALUATE_ANSWER_SYSTEM_PROMPT = """You are grading a generated answer against the original user question.
 The question may be preceded by prior conversation turns - use them to understand what the
