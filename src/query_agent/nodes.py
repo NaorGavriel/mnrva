@@ -187,7 +187,7 @@ def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
 
 def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
     """Build the `evaluate_answer` node: grades the generated Answer against the original question,
-    appending its reasoning to search_query on a bad grade to drive re-retrieval."""
+    replacing search_query with a revised, standalone query on a bad grade to drive re-retrieval."""
     structured_llm = llm.with_structured_output(EvaluateAnswer)
 
     def evaluate_answer_node(state: AgentState) -> dict:
@@ -207,7 +207,7 @@ def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
         )
         answer_grading: dict = {"answer_grade": result.grade, "evaluation_reasoning": result.reasoning}
         if result.grade == "bad":
-            answer_grading["search_query"] = f"{state['search_query']}\n\nPrevious attempt's answer fell short: {result.reasoning}"
+            answer_grading["search_query"] = result.revised_search_query
         return answer_grading
 
     return evaluate_answer_node

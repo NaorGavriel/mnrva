@@ -21,7 +21,11 @@ context.
 Judge whether the answer resolves the question:
 correct, complete enough to be useful, and backed by its citations. "good" if it holds up, "bad" if it's wrong, evasive, or
 clearly missing something the question asked for.
-If "bad", explain what to look for on the next search attempt in 2-3 sentences."""
+
+reasoning: 1-2 sentences on why the answer does or doesn't hold up.
+
+If "bad", also write revised_search_query: a new, standalone search query for the next
+retrieval attempt, written the way you'd write a search query from scratch."""
 
 EVALUATE_QUESTION_SYSTEM_PROMPT = """You are the first stage of a code-repository question-answering pipeline.
 Given the user's question, reason about what kind of question it is:

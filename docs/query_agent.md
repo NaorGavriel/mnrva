@@ -17,7 +17,7 @@ graph TD
     RD --> GD[grade_documents]
     GD -->|yes-labeled chunks| GA[generate_answer]
     GA --> EA[evaluate_answer]
-    EA -->|bad, attempts < cap<br/>reasoning appended to search_query| RD
+    EA -->|bad, attempts < cap<br/>search_query replaced with revised query| RD
     EA -->|good, or cap hit| PM[persist_agent_message]
     PM --> END([END])
 ```
@@ -63,8 +63,8 @@ All LLM nodes run on `AGENT_MODEL` (env var).
    chunks against the search query — a distinct judgment from
    `grade_documents`'s per-chunk relevance). `good` or cap hit →
    `persist_agent_message`. `bad`, under the attempt cap → loops back to
-   `retrieve_documents` with the evaluator's reasoning appended to
-   `search_query` (additive, doesn't replace `synthesized_query`/`filters`).
+   `retrieve_documents` with `search_query` *replaced* by a new,
+   standalone query the evaluator writes for the retry.
 
 7. **`persist_agent_message`** (not an LLM call) — runs once per turn,
    after `evaluate_answer` reaches a terminal state. Appends an
@@ -180,6 +180,4 @@ AIMessage(
 - **Corrective re-retrieval on `evaluate_answer`, not `grade_documents`**
   — a document-relevance check alone can pass (some chunks are on-topic)
   while the synthesized answer still falls short; gating the loop on the
-  answer catches that, and folding the evaluator's reasoning into the
-  next `search_query` gives the retry a concrete reason to look
-  different from the first attempt.
+  answer catches that.

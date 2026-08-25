@@ -51,7 +51,9 @@ class EvaluateAnswer(BaseModel):
     """Structured output of grading the generated Answer against the original user question."""
 
     grade: Literal["good", "bad"]
-    reasoning: str = Field(
-        description="Why the answer does or doesn't hold up against the question - "
-        "appended to search_query on a bad grade to give the retry a concrete reason to look different."
+    reasoning: str = Field(description="Why the answer does or doesn't hold up against the question.")
+    revised_search_query: str | None = Field(
+        default=None,
+        description="A new, standalone search query for the next retrieval attempt, targeting what "
+        "the answer is missing - only set when grade is 'bad'.",
     )

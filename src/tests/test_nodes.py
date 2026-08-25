@@ -431,8 +431,12 @@ def test_evaluate_answer_node_returns_good_grade_without_touching_search_query()
     assert output == {"answer_grade": "good", "evaluation_reasoning": "Answer is accurate and complete."}
 
 
-def test_evaluate_answer_node_appends_reasoning_to_search_query_on_bad_grade() -> None:
-    result = EvaluateAnswer(grade="bad", reasoning="Doesn't mention token expiry.")
+def test_evaluate_answer_node_replaces_search_query_with_revised_query_on_bad_grade() -> None:
+    result = EvaluateAnswer(
+        grade="bad",
+        reasoning="Doesn't mention token expiry.",
+        revised_search_query="token expiry handling in auth",
+    )
     llm = FakeLLM([result])
     node = make_evaluate_answer_node(llm)
     state: AgentState = {
@@ -444,8 +448,7 @@ def test_evaluate_answer_node_appends_reasoning_to_search_query_on_bad_grade() -
     output = node(state)
 
     assert output["answer_grade"] == "bad"
-    assert "how is auth implemented" in output["search_query"]
-    assert "Doesn't mention token expiry." in output["search_query"]
+    assert output["search_query"] == "token expiry handling in auth"
 
 
 def test_evaluate_answer_node_folds_conversation_window_into_the_prompt() -> None:
