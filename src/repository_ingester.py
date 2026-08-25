@@ -9,6 +9,7 @@ from qdrant_client import QdrantClient
 from chunks import get_chunks_by_id, upsert_chunks
 from code_parser import parse_code_file
 from db.db_postgres import ensure_repo_metadata_table, init_pool
+from repo_metadata import write_repo_metadata
 from db.db_qdrant import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_client
 from embeddings import EMBEDDING_BATCH_SIZE, embed_chunks
 from enrichment import enrich_chunks
@@ -55,6 +56,7 @@ async def ingest_repository(
     prune_unwanted_files(repo_path, unwanted_files)
 
     commit_sha = get_current_commit_sha(repo_path)
+    write_repo_metadata(pool, github_url, commit_sha)
 
     parse_start = time.monotonic()
     parsed_files = parse_repository_files(repo_path, registry)
