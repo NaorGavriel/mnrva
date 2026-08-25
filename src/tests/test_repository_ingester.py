@@ -3,8 +3,10 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+import repository_ingester
+from models import Chunk, ParsedFile
 from registry import LanguageRegistry
-from repository_ingester import parse_repository_files
+from repository_ingester import _enrich_embed_and_upsert, parse_repository_files
 
 
 @pytest.fixture
@@ -54,3 +56,130 @@ def test_parse_repository_files_excludes_unwanted_files(repo_with_files: Path) -
 
     paths = {parsed.path for parsed in parsed_files}
     assert PurePosixPath("package-lock.json") not in paths
+
+
+def _make_chunk(path: str, index: int, content_hash: str = "hash") -> Chunk:
+    return Chunk(
+        id=f"{path}#{index}",
+        content_hash=content_hash,
+        path=PurePosixPath(path),
+        language="python",
+        kind="function",
+        class_name="",
+        symbol_name=f"fn{index}",
+        raw_text=f"def fn{index}(): pass",
+        start_byte=0,
+        end_byte=10,
+        start_line=1,
+        end_line=1,
+        parent_id=None,
+    )
+
+
+def _make_parsed_file(path: str, n_chunks: int) -> ParsedFile:
+    return ParsedFile(
+        path=PurePosixPath(path),
+        chunks=[_make_chunk(path, i) for i in range(n_chunks)],
+        source="source",
+        imports=[],
+    )
+
+
+async def _identity_enrich_chunks(chunks: list[Chunk], source: str, imports: list[str]) -> list[Chunk]:
+    return chunks
+
+
+async def _identity_embed_chunks(chunks: list[Chunk]) -> list[Chunk]:
+    return chunks
+
+
+def _patch_pipeline_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    embedding_batch_size: int,
+    max_concurrency: int,
+    existing_chunks: dict[str, Chunk] | None = None,
+) -> list[list[str]]:
+    """Wire up the pipeline's dependencies with in-memory fakes, returning the
+    list of upserted batches (each a list of chunk ids, in upsert order)."""
+    monkeypatch.setattr(repository_ingester, "EMBEDDING_BATCH_SIZE", embedding_batch_size)
+    monkeypatch.setattr(repository_ingester, "ENRICHMENT_MAX_CONCURRENCY", max_concurrency)
+    monkeypatch.setattr(repository_ingester, "enrich_chunks", _identity_enrich_chunks)
+    monkeypatch.setattr(repository_ingester, "embed_chunks", _identity_embed_chunks)
+
+    existing_chunks = existing_chunks or {}
+    monkeypatch.setattr(
+        repository_ingester,
+        "get_chunks_by_id",
+        lambda client, collection_name, ids: [existing_chunks[id] for id in ids if id in existing_chunks],
+    )
+
+    upsert_batches: list[list[str]] = []
+    monkeypatch.setattr(
+        repository_ingester,
+        "upsert_chunks",
+        lambda client, collection_name, chunks: upsert_batches.append([chunk.id for chunk in chunks]),
+    )
+    return upsert_batches
+
+
+async def test_pipeline_spans_embedding_batches_across_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A single embedding batch can contain chunks from more than one file,
+    packed to EMBEDDING_BATCH_SIZE rather than flushed per file."""
+    upsert_batches = _patch_pipeline_dependencies(monkeypatch, embedding_batch_size=3, max_concurrency=1)
+    parsed_files = [_make_parsed_file("a.py", 2), _make_parsed_file("b.py", 4)]
+
+    total = await _enrich_embed_and_upsert(client=None, parsed_files=parsed_files)
+
+    assert total == 6
+    assert [len(batch) for batch in upsert_batches] == [3, 3]
+    assert upsert_batches[0] == ["a.py#0", "a.py#1", "b.py#0"]
+    assert upsert_batches[1] == ["b.py#1", "b.py#2", "b.py#3"]
+
+
+async def test_pipeline_flushes_a_partial_final_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chunks left over after the last file, short of a full EMBEDDING_BATCH_SIZE,
+    still get embedded and upserted as one final smaller batch."""
+    upsert_batches = _patch_pipeline_dependencies(monkeypatch, embedding_batch_size=10, max_concurrency=1)
+    parsed_files = [_make_parsed_file("a.py", 2), _make_parsed_file("b.py", 1)]
+
+    total = await _enrich_embed_and_upsert(client=None, parsed_files=parsed_files)
+
+    assert total == 3
+    assert [len(batch) for batch in upsert_batches] == [3]
+
+
+async def test_pipeline_skips_a_file_already_upserted_with_matching_content_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A file whose chunks are all already in Qdrant with a matching content_hash
+    is never enqueued for enrichment - the crash-recovery skip-check."""
+    already_done = _make_parsed_file("done.py", 2)
+    needs_work = _make_parsed_file("todo.py", 1)
+    existing_chunks = {chunk.id: chunk for chunk in already_done.chunks}
+
+    upsert_batches = _patch_pipeline_dependencies(
+        monkeypatch, embedding_batch_size=10, max_concurrency=2, existing_chunks=existing_chunks
+    )
+
+    total = await _enrich_embed_and_upsert(client=None, parsed_files=[already_done, needs_work])
+
+    assert total == 1
+    assert upsert_batches == [["todo.py#0"]]
+
+
+async def test_pipeline_reenriches_a_file_whose_content_hash_changed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A chunk id that exists in Qdrant but with a stale content_hash still
+    needs enrichment - the skip-check only skips exact matches."""
+    changed = _make_parsed_file("changed.py", 1)
+    stale_chunk = _make_chunk("changed.py", 0, content_hash="stale-hash")
+    existing_chunks = {stale_chunk.id: stale_chunk}
+
+    upsert_batches = _patch_pipeline_dependencies(
+        monkeypatch, embedding_batch_size=10, max_concurrency=1, existing_chunks=existing_chunks
+    )
+
+    total = await _enrich_embed_and_upsert(client=None, parsed_files=[changed])
+
+    assert total == 1
+    assert upsert_batches == [["changed.py#0"]]
