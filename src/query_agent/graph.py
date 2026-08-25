@@ -21,11 +21,11 @@ from query_agent.state import AgentState
 
 load_dotenv()
 
-RETRIEVAL_ATTEMPTS_CAP = 1
-
 def _route_after_evaluate_answer(state: AgentState) -> str:
     """Loop back to retrieve_documents on a bad grade under the attempt cap; otherwise end the turn."""
-    if state["answer_grade"] == "bad" and state["retrieval_attempts"] < RETRIEVAL_ATTEMPTS_CAP:
+    effort = state["effort"]
+    
+    if state["answer_grade"] == "bad" and state["retrieval_attempts"] < effort.retrieval_attempts_cap:
         return "retrieve_documents"
     return "persist_agent_message"
 

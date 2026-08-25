@@ -143,12 +143,12 @@ def test_find_chunk_id_collisions() -> None:
                 f"class_name={chunk.class_name!r} symbol_name={chunk.symbol_name!r}"
             )
 
-def start_turn(graph: CompiledStateGraph, thread_id: str, question: str, effort: Effort) -> dict:
+def start_turn(graph: CompiledStateGraph, thread_id: str, question: str, effort: Effort | None = None) -> dict:
     return graph.invoke(
         {
             "question": question,
             "messages": [HumanMessage(content=question)],
-            "effort": effort,
+            "effort": effort or BasicEffort(),
             "retrieved_chunks": {},
             "chunk_relevance": {},
             "retrieval_attempts": 0,
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     #test_extract_chunks_inline()
     #test_parse_code_file()
     #test_enrich_chunks()
-    test_ingest_repository()
+    #test_ingest_repository()
     #test_find_chunk_id_collisions()
-    #test_query_agent_graph()
+    test_query_agent_graph()
     #test_query_agent_graph_persists_across_turns()

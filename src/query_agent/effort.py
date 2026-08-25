@@ -8,18 +8,18 @@ class Effort(BaseModel):
 
 
 class BasicEffort(Effort):
-    """Minimal effort: no corrective retry, a small tool-call budget."""
+    """Minimal effort: no corrective retry."""
 
-    retrieval_attempts_cap: int = 1
+    retrieval_attempts_cap: int = 0
 
 
 class MediumEffort(Effort):
-    """Default effort: a few corrective retries, a moderate tool-call budget."""
+    """Default effort: a few corrective retries."""
 
-    retrieval_attempts_cap: int = 3
+    retrieval_attempts_cap: int = 2
 
 
 class HighEffort(Effort):
-    """Maximum effort: the full corrective-retry and tool-call budget."""
+    """Maximum effort: the full corrective-retry."""
 
-    retrieval_attempts_cap: int = 5
+    retrieval_attempts_cap: int = 4

@@ -19,7 +19,7 @@ from query_agent.state import AgentState, TurnContext
 load_dotenv()
 GRADE_MAX_CONCURRENCY = int(os.environ["GRADE_MAX_CONCURRENCY"])
 CONVERSATION_WINDOW_TURNS = int(os.environ["CONVERSATION_WINDOW_TURNS"])
-
+TOP_K = int(os.environ["TOP_CHUNKS_TO_RETREIVE"])
 
 def _format_turn(turn: TurnContext) -> str:
     block = f"Q: {turn['question']}\nA: {turn['answer']}"
@@ -104,7 +104,7 @@ def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> 
             collection_name,
             state["search_query"],
             language=filters.get("language"),
-            top_k=5
+            top_k=TOP_K
         )
         merged_chunks = {**state["retrieved_chunks"], **{r["id"]: r for r in chunks}}
         return {
