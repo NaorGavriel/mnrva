@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -27,6 +28,7 @@ load_dotenv()
 
 REPOSITORY_FILES_DIR = Path("repository_files")
 ENRICHMENT_MAX_CONCURRENCY = int(os.environ["ENRICHMENT_MAX_CONCURRENCY"])
+SKIP_CHECK_BATCH_SIZE = int(os.environ["SKIP_CHECK_BATCH_SIZE"])
 
 
 async def ingest_repository(
@@ -54,8 +56,13 @@ async def ingest_repository(
 
     commit_sha = get_current_commit_sha(repo_path)
 
+    parse_start = time.monotonic()
     parsed_files = parse_repository_files(repo_path, registry)
+    print(f"ingestion: parsed {len(parsed_files)} files in {time.monotonic() - parse_start:.1f}s")
+
+    pipeline_start = time.monotonic()
     total_chunks = await _enrich_embed_and_upsert(client, parsed_files)
+    print(f"ingestion: enrichment/embedding pipeline finished in {time.monotonic() - pipeline_start:.1f}s")
 
     delete_repository(repo_path)
     print(f"upserted {total_chunks} chunks from {github_url} @ {commit_sha}")
@@ -87,9 +94,18 @@ async def _enrich_embed_and_upsert(client: QdrantClient, parsed_files: list[Pars
     """Run the producer/consumer pipeline over `parsed_files`.
     """
     file_queue: asyncio.Queue[ParsedFile] = asyncio.Queue()
+    skipped = 0
+    existing_hashes = _fetch_existing_content_hashes(client, parsed_files)
     for parsed in parsed_files:
-        if _needs_enrichment(client, parsed):
+        if not parsed.chunks:
+            skipped += 1
+            print(f"ingestion: skipping {parsed.path} - no chunks to enrich")
+        elif _needs_enrichment(parsed, existing_hashes):
             file_queue.put_nowait(parsed)
+        else:
+            skipped += 1
+            print(f"ingestion: skipping {parsed.path} - already upserted with matching content_hash")
+    print(f"ingestion: {skipped} file(s) skipped, {file_queue.qsize()} file(s) queued for enrichment")
 
     ready_queue: asyncio.Queue[list[Chunk] | None] = asyncio.Queue()
     consumer = asyncio.create_task(_embedding_consumer(client, ready_queue))
@@ -126,6 +142,7 @@ async def _embedding_consumer(client: QdrantClient, ready_queue: "asyncio.Queue[
     """
     accumulator: list[Chunk] = []
     total_upserted = 0
+    batch_count = 0
     while True:
         item = await ready_queue.get()
         if item is None:
@@ -134,27 +151,38 @@ async def _embedding_consumer(client: QdrantClient, ready_queue: "asyncio.Queue[
         while len(accumulator) >= EMBEDDING_BATCH_SIZE:
             batch, accumulator = accumulator[:EMBEDDING_BATCH_SIZE], accumulator[EMBEDDING_BATCH_SIZE:]
             total_upserted += await _embed_and_upsert(client, batch)
+            batch_count += 1
 
     if accumulator:
         total_upserted += await _embed_and_upsert(client, accumulator)
+        batch_count += 1
+
+    print(f"ingestion: upserted {batch_count} batch(es) totalling {total_upserted} chunks")
     return total_upserted
 
 
 async def _embed_and_upsert(client: QdrantClient, chunks: list[Chunk]) -> int:
     """Embed one batch of chunks and upsert it into Qdrant, returning the batch size."""
+    start = time.monotonic()
     embedded = await embed_chunks(chunks)
     upsert_chunks(client, COLLECTION_NAME, embedded)
+    print(f"ingestion: embedded+upserted a batch of {len(embedded)} chunks in {time.monotonic() - start:.1f}s")
     return len(embedded)
 
 
-def _needs_enrichment(client: QdrantClient, parsed: ParsedFile) -> bool:
+def _fetch_existing_content_hashes(client: QdrantClient, parsed_files: list[ParsedFile]) -> dict[str, str]:
+    """Batched Qdrant lookups for every chunk id across all of `parsed_files."""
+    all_ids = [chunk.id for parsed in parsed_files for chunk in parsed.chunks]
+    existing_hashes: dict[str, str] = {}
+    for start in range(0, len(all_ids), SKIP_CHECK_BATCH_SIZE):
+        batch_ids = all_ids[start : start + SKIP_CHECK_BATCH_SIZE]
+        for chunk in get_chunks_by_id(client, COLLECTION_NAME, batch_ids):
+            existing_hashes[chunk.id] = chunk.content_hash
+    return existing_hashes
+
+
+def _needs_enrichment(parsed: ParsedFile, existing_hashes: dict[str, str]) -> bool:
     """Whether `parsed` still needs enrichment - false only if every one of
-    its chunks already exists in Qdrant with a matching `content_hash`.
+    its chunks already exists in Qdrant.
     """
-    if not parsed.chunks:
-        return False
-    existing_hashes = {
-        chunk.id: chunk.content_hash
-        for chunk in get_chunks_by_id(client, COLLECTION_NAME, [chunk.id for chunk in parsed.chunks])
-    }
     return not all(existing_hashes.get(chunk.id) == chunk.content_hash for chunk in parsed.chunks)

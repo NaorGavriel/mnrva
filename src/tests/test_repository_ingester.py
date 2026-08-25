@@ -104,6 +104,7 @@ def _patch_pipeline_dependencies(
     list of upserted batches (each a list of chunk ids, in upsert order)."""
     monkeypatch.setattr(repository_ingester, "EMBEDDING_BATCH_SIZE", embedding_batch_size)
     monkeypatch.setattr(repository_ingester, "ENRICHMENT_MAX_CONCURRENCY", max_concurrency)
+    monkeypatch.setattr(repository_ingester, "SKIP_CHECK_BATCH_SIZE", 1000)
     monkeypatch.setattr(repository_ingester, "enrich_chunks", _identity_enrich_chunks)
     monkeypatch.setattr(repository_ingester, "embed_chunks", _identity_embed_chunks)
 
@@ -123,6 +124,29 @@ def _patch_pipeline_dependencies(
     return upsert_batches
 
 
+def test_fetch_existing_content_hashes_batches_id_lookups_at_the_configured_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """More chunk ids than SKIP_CHECK_BATCH_SIZE are looked up across multiple
+    get_chunks_by_id calls, merged into one hash map - not one call per file,
+    and not one call for the whole repo."""
+    monkeypatch.setattr(repository_ingester, "SKIP_CHECK_BATCH_SIZE", 2)
+    parsed_files = [_make_parsed_file("a.py", 2), _make_parsed_file("b.py", 1)]
+    existing_chunks = {chunk.id: chunk for parsed in parsed_files for chunk in parsed.chunks}
+    batch_sizes: list[int] = []
+
+    def fake_get_chunks_by_id(client, collection_name, ids):
+        batch_sizes.append(len(ids))
+        return [existing_chunks[id] for id in ids if id in existing_chunks]
+
+    monkeypatch.setattr(repository_ingester, "get_chunks_by_id", fake_get_chunks_by_id)
+
+    existing_hashes = repository_ingester._fetch_existing_content_hashes(client=None, parsed_files=parsed_files)
+
+    assert batch_sizes == [2, 1]
+    assert existing_hashes == {chunk_id: chunk.content_hash for chunk_id, chunk in existing_chunks.items()}
+
+
 async def test_pipeline_spans_embedding_batches_across_files(monkeypatch: pytest.MonkeyPatch) -> None:
     """A single embedding batch can contain chunks from more than one file,
     packed to EMBEDDING_BATCH_SIZE rather than flushed per file."""
@@ -135,6 +159,19 @@ async def test_pipeline_spans_embedding_batches_across_files(monkeypatch: pytest
     assert [len(batch) for batch in upsert_batches] == [3, 3]
     assert upsert_batches[0] == ["a.py#0", "a.py#1", "b.py#0"]
     assert upsert_batches[1] == ["b.py#1", "b.py#2", "b.py#3"]
+
+
+async def test_pipeline_skips_a_file_with_no_chunks_without_enqueueing_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A file that parses to zero chunks (e.g. import-only) is skipped outright -
+    there's nothing to check against Qdrant or to enrich."""
+    empty_file = ParsedFile(path=PurePosixPath("empty.py"), chunks=[], source="import os", imports=["os"])
+    has_work = _make_parsed_file("b.py", 1)
+    upsert_batches = _patch_pipeline_dependencies(monkeypatch, embedding_batch_size=10, max_concurrency=1)
+
+    total = await _enrich_embed_and_upsert(client=None, parsed_files=[empty_file, has_work])
+
+    assert total == 1
+    assert upsert_batches == [["b.py#0"]]
 
 
 async def test_pipeline_flushes_a_partial_final_batch(monkeypatch: pytest.MonkeyPatch) -> None:
