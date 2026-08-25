@@ -114,8 +114,13 @@ class ChunkSearchResult(TypedDict):
 @dataclass
 class ParsedFile:
     """The output of parsing one source file: its chunks plus the shared
-    context (`source`, `imports`) enrichment needs but `Chunk` doesn't carry."""
+    context (`source`, `imports`) enrichment needs but `Chunk` doesn't carry.
 
+    `path` is kept even though every chunk also carries it, so a file's
+    identity survives when it parses to zero chunks (e.g. an empty file).
+    """
+
+    path: PurePath
     chunks: list[Chunk]
     source: str
     imports: list[str]

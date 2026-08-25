@@ -1,3 +1,4 @@
+import asyncio
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -91,8 +92,8 @@ def test_enrich_chunks() -> None:
 
     registry = LanguageRegistry()
     parsed = parse_code_file(path, language, registry)
-    
-    enriched = enrich_chunks(parsed.chunks, parsed.source, parsed.imports)
+
+    enriched = asyncio.run(enrich_chunks(parsed.chunks, parsed.source, parsed.imports))
     print(f"enriched {len(enriched)} chunks from {path}")
     for chunk in enriched:
         assert chunk.context_text, "context_text was not populated"
@@ -106,7 +107,7 @@ def test_enrich_chunks() -> None:
 def test_ingest_repository() -> None:
     """Run the full ingester end to end against TEST_REPO_URL: clone, parse,
     enrich, embed, and upsert every wanted code file into live Qdrant."""
-    ingest_repository(TEST_REPO_URL)
+    asyncio.run(ingest_repository(TEST_REPO_URL))
 
 
 def test_find_chunk_id_collisions() -> None:
@@ -212,7 +213,7 @@ if __name__ == "__main__":
     #test_extract_chunks_inline()
     #test_parse_code_file()
     #test_enrich_chunks()
-    #test_ingest_repository()
+    test_ingest_repository()
     #test_find_chunk_id_collisions()
     #test_query_agent_graph()
-    test_query_agent_graph_persists_across_turns()
+    #test_query_agent_graph_persists_across_turns()

@@ -18,17 +18,32 @@ The system is organized into three components.
 ### 2.1 Ingestion & Indexing Pipeline
 
 Responsible for turning raw repository files into searchable, enriched chunks.
+Runs as a producer/consumer pipeline so throughput scales with repo size under a shared, account-level rate budget.
 
-For each source file:
-1. Route to the correct tree-sitter grammar by file extension (see §3.3).
-2. Parse the file and extract function/class/method-level nodes using a
-   per-language node-type query.
-3. Extract imports from the same parse tree (per-file)
-4. Generate a short contextual description of each chunk using an LLM, given
-   the whole file and its imports (prompt-cached to control cost).
-5. Prepend the context to the raw chunk, embed it, and upsert into the
-   database with a deterministic ID and metadata (`file_path`,
-   `symbol_name`, `start_line`, `end_line`, `language`, `imports`).
+1. **Parse phase.** Walk every wanted file (git-tracked, extension-allowlisted,
+   filename-denylisted). Route each to the correct tree-sitter grammar by
+   file extension (see §3.3) and extract function/class/method-level nodes
+   plus imports via a per-language node-type query; non-code files are
+   chunked by prose/semantic splitting instead. No LLM calls in this phase.
+   All parsed files feed a repo-wide file queue.
+2. **Enrichment workers.** A bounded pool of workers pulls files off that
+   queue. Each worker enriches a file's chunks in one batched,
+   structured-output LLM call (the file source/imports sent once, covering
+   all of that file's chunks, to avoid re-sending the file per chunk);
+   large files are split into sequential sub-batch calls. 
+   Calls are paced through a shared async token-bucket
+   rate limiter (requests/minute and tokens/minute), sized from the
+   account's actual limits rather than hardcoded. A file already durably
+   upserted from a prior run is skipped.
+   Enriched chunks are pushed onto a second, ready-to-embed queue.
+3. **Embedding consumer.** Drains the ready-to-embed queue, accumulating
+   chunks *across files* until a full embedding-batch is available (or the
+   enrichment side signals it's fully drained),
+   then embeds and upserts the whole batch in one call each. Embedding calls share the same rate limiter as enrichment, since both draw from the same account-level budget.
+
+A batch becoming durable in Qdrant is the pipeline's recovery unit: a crash
+only loses whatever hadn't yet been embedded/upserted, and re-parsing on
+restart is cheap since it's local and LLM-free.
 
 Chunk IDs are derived from `file_path + symbol_name` but formatted as a
 UUID (via `uuid5`). Qdrant only accepts 64-bit unsigned integers or UUIDs as point IDs. The mapping stays deterministic which is what lets the refresh pipeline (§2.3) do a clean delete-and-replace on re-index.
@@ -107,7 +122,7 @@ filtering or boosting at query time.
 - **Vectors** — dense embeddings for semantic search.
 - **Sparse vectors** — Qdrant generates BM25 sparse vectors natively for the lexical half of hybrid search.
 - **Payload** — chunk metadata (`file_path`, `symbol_name`, `start_line`,
-  `end_line`, `language`, `imports`) stored per point, with indexed fields
+  `end_line`, `language`) stored per point, with indexed fields
   for fast filtering (e.g. language-scoped search).
 - **Fusion** — dense + sparse results are combined server-side via the
   Query API's built-in RRF, no custom fusion code required (§2.2).
