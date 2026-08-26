@@ -10,7 +10,7 @@ from chunks import get_chunks_by_id, upsert_chunks
 from code_parser import parse_code_file
 from db.db_postgres import ensure_repo_metadata_table, init_pool
 from repo_metadata import write_repo_metadata
-from db.db_qdrant import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_client
+from db.db_qdrant import COLLECTION_NAME, QDRANT_URL, ensure_collection, init_client, QDRANT_API_KEY
 from embeddings import EMBEDDING_BATCH_SIZE, embed_chunks
 from enrichment import enrich_chunks
 from languages import get_language, is_code_file
@@ -44,7 +44,7 @@ async def ingest_repository(
     raises.
     """
     registry = registry or LanguageRegistry()
-    client = client or init_client(url=QDRANT_URL)
+    client = client or init_client(url=QDRANT_URL, api_key=QDRANT_API_KEY)
     ensure_collection(client, COLLECTION_NAME)
 
     pool = init_pool()

@@ -1,16 +1,19 @@
+import os
+
 from qdrant_client import QdrantClient, models
 
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "bm25"
 EMBEDDING_DIM = 1536  # OpenAI text-embedding-3-small
 COLLECTION_NAME = "code_chunks"
-QDRANT_URL = "http://localhost:6333"
+QDRANT_URL = os.environ["QDRANT_URL"]
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")
 
 
-def init_client(url: str | None = None) -> QdrantClient:
+def init_client(url: str | None = None, api_key: str | None = None) -> QdrantClient:
     """Connect to Qdrant: `path=` for an embedded local instance, `url=` for a real server."""
     if url is not None:
-        return QdrantClient(url=url)
+        return QdrantClient(url=url, api_key=api_key)
     raise ValueError("init_client requires url")
 
 
