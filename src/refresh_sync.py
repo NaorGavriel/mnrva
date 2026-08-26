@@ -72,6 +72,7 @@ async def sync_repository(
         else:
             deleted_paths.append(change["path"]) # A changed-status path failing the allowlist is treated as a deletion.
 
+    deleted_count = len(deleted_paths)  # snapshot before changed paths are appended below for delete-then-replace
 
     parsed_files: list[ParsedFile] = []
     for path, content in fetch_changed_files(repo_path, new_sha, changed_paths):
@@ -94,7 +95,7 @@ async def sync_repository(
     return RefreshResult(
         added=sum(1 for f in parsed_files if status_by_changed_path.get(f.path) == "added"),
         modified=sum(1 for f in parsed_files if status_by_changed_path.get(f.path) == "modified"),
-        deleted=len(deleted_paths),
+        deleted=deleted_count,
         old_sha=old_sha,
         new_sha=new_sha,
     )
