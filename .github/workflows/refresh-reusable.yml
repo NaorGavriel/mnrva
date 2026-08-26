@@ -1,0 +1,81 @@
+name: mnrva Refresh Sync (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      embedding_model:
+        required: true
+        type: string
+      embedding_batch_size:
+        required: true
+        type: string
+      enrichment_model:
+        required: true
+        type: string
+      enrichment_max_chunks_per_call:
+        required: true
+        type: string
+      enrichment_max_call_retries:
+        required: true
+        type: string
+      enrichment_max_concurrency:
+        required: true
+        type: string
+      skip_check_batch_size:
+        required: true
+        type: string
+      openai_max_requests_per_minute:
+        required: true
+        type: string
+      openai_max_tokens_per_minute:
+        required: true
+        type: string
+    secrets:
+      QDRANT_URL:
+        required: true
+      QDRANT_API_KEY:
+        required: false
+      POSTGRES_HOST:
+        required: true
+      POSTGRES_PORT:
+        required: true
+      POSTGRES_USER:
+        required: true
+      POSTGRES_PASSWORD:
+        required: true
+      POSTGRES_DB:
+        required: true
+      OPENAI_API_KEY:
+        required: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: refresh-sync-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: astral-sh/setup-uv@v10.0.0
+        with:
+          enable-cache: true
+
+      - name: Run refresh
+        env:
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          EMBEDDING_MODEL: ${{ inputs.embedding_model }}
+          EMBEDDING_BATCH_SIZE: ${{ inputs.embedding_batch_size }}
+          ENRICHMENT_MODEL: ${{ inputs.enrichment_model }}
+          ENRICHMENT_MAX_CHUNKS_PER_CALL: ${{ inputs.enrichment_max_chunks_per_call }}
+          ENRICHMENT_MAX_CALL_RETRIES: ${{ inputs.enrichment_max_call_retries }}
+          ENRICHMENT_MAX_CONCURRENCY: ${{ inputs.enrichment_max_concurrency }}
+          SKIP_CHECK_BATCH_SIZE: ${{ inputs.skip_check_batch_size }}
+          OPENAI_MAX_REQUESTS_PER_MINUTE: ${{ inputs.openai_max_requests_per_minute }}
+          OPENAI_MAX_TOKENS_PER_MINUTE: ${{ inputs.openai_max_tokens_per_minute }}
+        run: uvx --from git+https://github.com/NaorGavriel/mnrva.git@v0.1.0 mnrva-refresh

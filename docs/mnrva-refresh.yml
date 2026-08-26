@@ -1,0 +1,43 @@
+# Template caller workflow for other repos that want mnrva's scheduled
+# refresh. Copy this into your own repo's .github/workflows/, then:
+#   1. Replace @v0.1.0 with whatever mnrva tag you want to pin to.
+#   2. Add the secrets/vars below under your repo's
+#      Settings -> Secrets and variables -> Actions.
+#   3. Have already run `mnrva-ingest <your_github_url>` once against that
+#      same Postgres, so repo_metadata has a row for mnrva-refresh to read.
+name: mnrva Refresh Sync
+
+on:
+  # Pick a schedule for how often you want the refresh to run.
+  # All times are UTC, minute-of-hour first.
+  # Copy or write the schedule you want, default is 1 hour.
+  #   1 hour:  "0 * * * *"
+  #   6 hours: "0 */6 * * *"
+  #   daily:   "0 6 * * *"     (06:00 UTC every day)
+  #   weekly:  "0 6 * * 1"     (06:00 UTC every Monday)
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    uses: NaorGavriel/mnrva/.github/workflows/refresh-reusable.yml@v0.1.0
+    with:
+      embedding_model: ${{ vars.EMBEDDING_MODEL }}
+      embedding_batch_size: ${{ vars.EMBEDDING_BATCH_SIZE }}
+      enrichment_model: ${{ vars.ENRICHMENT_MODEL }}
+      enrichment_max_chunks_per_call: ${{ vars.ENRICHMENT_MAX_CHUNKS_PER_CALL }}
+      enrichment_max_call_retries: ${{ vars.ENRICHMENT_MAX_CALL_RETRIES }}
+      enrichment_max_concurrency: ${{ vars.ENRICHMENT_MAX_CONCURRENCY }}
+      skip_check_batch_size: ${{ vars.SKIP_CHECK_BATCH_SIZE }}
+      openai_max_requests_per_minute: ${{ vars.OPENAI_MAX_REQUESTS_PER_MINUTE }}
+      openai_max_tokens_per_minute: ${{ vars.OPENAI_MAX_TOKENS_PER_MINUTE }}
+    secrets:
+      QDRANT_URL: ${{ secrets.QDRANT_URL }}
+      QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+      POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+      POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
