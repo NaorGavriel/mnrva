@@ -97,9 +97,6 @@ def test_is_denied_filename_allows_ordinary_files() -> None:
     assert not repository_parser._is_denied_filename(Path("main.py"))
 
 
-def test_passes_size_cutoff(tmp_path: Path) -> None:
-    small_file = tmp_path / "small.txt"
-    small_file.write_text("x")
-
-    assert repository_parser._passes_size_cutoff(small_file, max_bytes=10)
-    assert not repository_parser._passes_size_cutoff(small_file, max_bytes=0)
+def test_passes_size_cutoff() -> None:
+    assert repository_parser._passes_size_cutoff(1, max_bytes=10)
+    assert not repository_parser._passes_size_cutoff(1, max_bytes=0)

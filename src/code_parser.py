@@ -10,10 +10,7 @@ from registry import GrammarRegistry
 def parse_code_file(
     read_from: Path, language: str, registry: GrammarRegistry, *, repo_root: Path | None = None
 ) -> ParsedFile:
-    """Read, parse, and chunk a single source file.
-
-    Thin file-level orchestrator: all extraction logic lives in the pure
-    `extract_chunks`/`_extract_imports`.
+    """Read a single source file from disk and delegate to `parse_code_bytes`.
 
     `repo_root` is stripped from `read_from` to produce the identity recorded on
     every chunk. keeps ids stable.
@@ -21,6 +18,13 @@ def parse_code_file(
     source = read_from.read_bytes()
     relative = read_from.relative_to(repo_root) if repo_root is not None else read_from
     path: PurePath = PurePosixPath(relative.as_posix())
+    return parse_code_bytes(source, path, language, registry)
+
+
+def parse_code_bytes(
+    source: bytes, path: PurePath, language: str, registry: GrammarRegistry
+) -> ParsedFile:
+    """Parse and chunk source bytes already in memory, identified by `path`."""
     parser = registry.get_parser(language)
     tree = parser.parse(source)
     config = LANGUAGE_CONFIG[path.suffix]

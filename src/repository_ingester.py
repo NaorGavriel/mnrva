@@ -63,7 +63,7 @@ async def ingest_repository(
     print(f"ingestion: parsed {len(parsed_files)} files in {time.monotonic() - parse_start:.1f}s")
 
     pipeline_start = time.monotonic()
-    total_chunks = await _enrich_embed_and_upsert(client, parsed_files)
+    total_chunks = await enrich_embed_and_upsert(client, parsed_files)
     print(f"ingestion: enrichment/embedding pipeline finished in {time.monotonic() - pipeline_start:.1f}s")
 
     delete_repository(repo_path)
@@ -92,7 +92,7 @@ def parse_repository_files(repo_path: Path, registry: GrammarRegistry) -> list[P
     return parsed_files
 
 
-async def _enrich_embed_and_upsert(client: QdrantClient, parsed_files: list[ParsedFile]) -> int:
+async def enrich_embed_and_upsert(client: QdrantClient, parsed_files: list[ParsedFile]) -> int:
     """Run the producer/consumer pipeline over `parsed_files`.
     """
     file_queue: asyncio.Queue[ParsedFile] = asyncio.Queue()

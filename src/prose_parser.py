@@ -37,11 +37,15 @@ class _Section(NamedTuple):
 
 
 def parse_prose_file(read_from: Path, *, repo_root: Path | None = None) -> ParsedFile:
-    """Read and chunk a single non-code file, routed by extension to a format-aware splitter."""
+    """Read a single non-code file from disk and delegate to `parse_prose_bytes`."""
     source = read_from.read_text(encoding="utf-8")
     relative = read_from.relative_to(repo_root) if repo_root is not None else read_from
     path: PurePath = PurePosixPath(relative.as_posix())
+    return parse_prose_bytes(source, path)
 
+
+def parse_prose_bytes(source: str, path: PurePath) -> ParsedFile:
+    """Chunk decoded text already in memory, routed by extension to a format-aware splitter."""
     language, split = _PROSE_FORMATS.get(path.suffix, ("text", _split_text))
     sections = _cap_oversized(split(source))
     chunks = [

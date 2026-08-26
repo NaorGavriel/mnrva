@@ -6,7 +6,7 @@ import pytest
 import repository_ingester
 from models import Chunk, ParsedFile
 from registry import LanguageRegistry
-from repository_ingester import _enrich_embed_and_upsert, parse_repository_files
+from repository_ingester import enrich_embed_and_upsert, parse_repository_files
 
 
 @pytest.fixture
@@ -153,7 +153,7 @@ async def test_pipeline_spans_embedding_batches_across_files(monkeypatch: pytest
     upsert_batches = _patch_pipeline_dependencies(monkeypatch, embedding_batch_size=3, max_concurrency=1)
     parsed_files = [_make_parsed_file("a.py", 2), _make_parsed_file("b.py", 4)]
 
-    total = await _enrich_embed_and_upsert(client=None, parsed_files=parsed_files)
+    total = await enrich_embed_and_upsert(client=None, parsed_files=parsed_files)
 
     assert total == 6
     assert [len(batch) for batch in upsert_batches] == [3, 3]
@@ -168,7 +168,7 @@ async def test_pipeline_skips_a_file_with_no_chunks_without_enqueueing_it(monkey
     has_work = _make_parsed_file("b.py", 1)
     upsert_batches = _patch_pipeline_dependencies(monkeypatch, embedding_batch_size=10, max_concurrency=1)
 
-    total = await _enrich_embed_and_upsert(client=None, parsed_files=[empty_file, has_work])
+    total = await enrich_embed_and_upsert(client=None, parsed_files=[empty_file, has_work])
 
     assert total == 1
     assert upsert_batches == [["b.py#0"]]
@@ -180,7 +180,7 @@ async def test_pipeline_flushes_a_partial_final_batch(monkeypatch: pytest.Monkey
     upsert_batches = _patch_pipeline_dependencies(monkeypatch, embedding_batch_size=10, max_concurrency=1)
     parsed_files = [_make_parsed_file("a.py", 2), _make_parsed_file("b.py", 1)]
 
-    total = await _enrich_embed_and_upsert(client=None, parsed_files=parsed_files)
+    total = await enrich_embed_and_upsert(client=None, parsed_files=parsed_files)
 
     assert total == 3
     assert [len(batch) for batch in upsert_batches] == [3]
@@ -199,7 +199,7 @@ async def test_pipeline_skips_a_file_already_upserted_with_matching_content_hash
         monkeypatch, embedding_batch_size=10, max_concurrency=2, existing_chunks=existing_chunks
     )
 
-    total = await _enrich_embed_and_upsert(client=None, parsed_files=[already_done, needs_work])
+    total = await enrich_embed_and_upsert(client=None, parsed_files=[already_done, needs_work])
 
     assert total == 1
     assert upsert_batches == [["todo.py#0"]]
@@ -216,7 +216,7 @@ async def test_pipeline_reenriches_a_file_whose_content_hash_changed(monkeypatch
         monkeypatch, embedding_batch_size=10, max_concurrency=1, existing_chunks=existing_chunks
     )
 
-    total = await _enrich_embed_and_upsert(client=None, parsed_files=[changed])
+    total = await enrich_embed_and_upsert(client=None, parsed_files=[changed])
 
     assert total == 1
     assert upsert_batches == [["changed.py#0"]]
