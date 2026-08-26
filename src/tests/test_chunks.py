@@ -3,7 +3,7 @@ from pathlib import PurePosixPath
 from qdrant_client import models as qdrant_models
 
 import chunks
-from chunks import get_chunks_by_id, search_chunks, upsert_chunks
+from chunks import delete_chunks_by_path, get_chunks_by_id, search_chunks, upsert_chunks
 from db.db_qdrant import DENSE_VECTOR_NAME, SPARSE_VECTOR_NAME
 from models import Chunk, chunk_retrieval_text
 
@@ -19,11 +19,15 @@ class FakeQdrantClient:
         self.upsert_calls: list[dict] = []
         self.query_points_calls: list[dict] = []
         self.retrieve_calls: list[dict] = []
+        self.delete_calls: list[dict] = []
         self._query_response = query_response if query_response is not None else FakeQueryResponse([])
         self._retrieve_response = retrieve_response if retrieve_response is not None else []
 
     def upsert(self, collection_name: str, points: list) -> None:
         self.upsert_calls.append({"collection_name": collection_name, "points": points})
+
+    def delete(self, collection_name: str, points_selector) -> None:
+        self.delete_calls.append({"collection_name": collection_name, "points_selector": points_selector})
 
     def query_points(self, **kwargs) -> "FakeQueryResponse":
         self.query_points_calls.append(kwargs)
@@ -211,6 +215,19 @@ def test_upsert_chunks_is_a_noop_for_empty_chunks() -> None:
     upsert_chunks(client, "code_chunks", [])
 
     assert client.upsert_calls == []
+
+
+def test_delete_chunks_by_path_deletes_by_the_file_path_payload_field() -> None:
+    client = FakeQdrantClient()
+
+    delete_chunks_by_path(client, "code_chunks", PurePosixPath("src/nested/main.py"))
+
+    assert len(client.delete_calls) == 1
+    call = client.delete_calls[0]
+    assert call["collection_name"] == "code_chunks"
+    condition = call["points_selector"].filter.must[0]
+    assert condition.key == "file_path"
+    assert condition.match.value == "src/nested/main.py"
 
 
 def test_search_chunks_calls_query_points_with_the_given_collection_name(monkeypatch) -> None:

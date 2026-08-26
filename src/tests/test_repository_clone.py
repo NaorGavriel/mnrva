@@ -6,9 +6,11 @@ import pytest
 from repository_clone import (
     CloneError,
     UpdateError,
+    clone_for_diffing,
     clone_full_repository,
     clone_repository,
     get_current_commit_sha,
+    get_remote_head_sha,
     prune_unwanted_files,
     update_repository,
 )
@@ -133,6 +135,51 @@ def test_clone_full_repository_keeps_full_history_unlike_the_shallow_clone(
         ["git", "log", "--oneline"], cwd=dest_dir, check=True, capture_output=True, text=True
     )
     assert len(log.stdout.strip().splitlines()) == 2
+
+
+def test_get_remote_head_sha_returns_the_current_head_commit(local_repo: Path) -> None:
+    expected = get_current_commit_sha(local_repo)
+
+    assert get_remote_head_sha(str(local_repo)) == expected
+
+
+def test_get_remote_head_sha_raises_clone_error_on_invalid_source(tmp_path: Path) -> None:
+    missing_source = tmp_path / "does_not_exist"
+
+    with pytest.raises(CloneError):
+        get_remote_head_sha(str(missing_source))
+
+
+def test_clone_for_diffing_creates_a_checkout_less_clone(local_repo: Path, tmp_path: Path) -> None:
+    """--no-checkout: .git/ exists but no working tree files are ever written."""
+    dest_dir = tmp_path / "cloned"
+
+    result = clone_for_diffing(str(local_repo), dest_dir)
+
+    assert result == dest_dir
+    assert (dest_dir / ".git").is_dir()
+    assert not (dest_dir / "hello.py").exists()
+
+
+def test_clone_for_diffing_wipes_existing_dest_dir(local_repo: Path, tmp_path: Path) -> None:
+    """A pre-existing dest_dir (e.g. leftover from a prior run) is wiped before cloning."""
+    dest_dir = tmp_path / "cloned"
+    dest_dir.mkdir()
+    stale_file = dest_dir / "stale.txt"
+    stale_file.write_text("leftover from a previous run")
+
+    clone_for_diffing(str(local_repo), dest_dir)
+
+    assert not stale_file.exists()
+    assert (dest_dir / ".git").is_dir()
+
+
+def test_clone_for_diffing_raises_clone_error_on_invalid_source(tmp_path: Path) -> None:
+    dest_dir = tmp_path / "cloned"
+    missing_source = tmp_path / "does_not_exist"
+
+    with pytest.raises(CloneError):
+        clone_for_diffing(str(missing_source), dest_dir)
 
 
 def test_update_repository_fetches_and_resets_to_a_newer_commit(local_repo: Path, tmp_path: Path) -> None:
