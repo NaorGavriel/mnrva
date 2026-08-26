@@ -98,5 +98,5 @@ def test_is_denied_filename_allows_ordinary_files() -> None:
 
 
 def test_passes_size_cutoff() -> None:
-    assert repository_parser._passes_size_cutoff(1, max_bytes=10)
-    assert not repository_parser._passes_size_cutoff(1, max_bytes=0)
+    assert repository_parser.passes_size_cutoff(1, max_bytes=10)
+    assert not repository_parser.passes_size_cutoff(1, max_bytes=0)

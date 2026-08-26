@@ -1,5 +1,5 @@
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from languages import LANGUAGE_CONFIG
 from prose_parser import PROSE_EXTENSIONS
@@ -57,22 +57,22 @@ def list_unwanted_files(repo_path: Path) -> list[Path]:
 
 def _is_wanted(repo_path: Path, path: Path) -> bool:
     """Whether `path` passes the extension allowlist, filename denylist, and size cutoff."""
-    return passes_allowlist(path) and _passes_size_cutoff(
+    return passes_allowlist(path) and passes_size_cutoff(
         (repo_path / path).stat().st_size, MAX_FILE_SIZE_BYTES
     )
 
 
-def passes_allowlist(path: Path) -> bool:
+def passes_allowlist(path: PurePath) -> bool:
     """Whether `path` passes the extension allowlist and filename denylist, on path alone."""
     allowed_extensions = set(LANGUAGE_CONFIG) | PROSE_EXTENSIONS
     return path.suffix in allowed_extensions and not _is_denied_filename(path)
 
 
-def _is_denied_filename(path: Path) -> bool:
+def _is_denied_filename(path: PurePath) -> bool:
     """Whether `path`'s filename is a lockfile (or similar) excluded regardless of extension."""
     return path.name in DENIED_FILENAMES
 
 
-def _passes_size_cutoff(length: int, max_bytes: int) -> bool:
+def passes_size_cutoff(length: int, max_bytes: int) -> bool:
     """Whether a file of `length` bytes is at or under `max_bytes`."""
     return length <= max_bytes

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import PurePath
 from prose_parser import _PROSE_FORMATS
 
 @dataclass
@@ -54,12 +54,12 @@ LANGUAGE_CONFIG: dict[str, LanguageConfig] = {
 }
 
 
-def get_language(path: Path) -> str | None:
+def get_language(path: PurePath) -> str | None:
     """Return the canonical language name for `path`'s extension, or None if unsupported."""
     config = LANGUAGE_CONFIG.get(path.suffix)
     return config.language if config else None
 
 
-def is_code_file(path: Path) -> bool:
+def is_code_file(path: PurePath) -> bool:
     """Whether `path`'s extension is routed to tree-sitter chunking."""
     return path.suffix in LANGUAGE_CONFIG
