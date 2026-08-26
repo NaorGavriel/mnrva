@@ -1,4 +1,4 @@
-from pathlib import PurePosixPath
+from pathlib import PurePath, PurePosixPath
 
 from qdrant_client import QdrantClient, models
 
@@ -43,6 +43,22 @@ def upsert_chunks(client: QdrantClient, collection_name: str, chunks: list[Chunk
         for chunk in chunks
     ]
     client.upsert(collection_name=collection_name, points=points)
+
+
+def delete_chunks_by_path(client: QdrantClient, collection_name: str, file_path: PurePath) -> None:
+    """Delete every chunk whose `file_path` payload matches `file_path`."""
+    client.delete(
+        collection_name=collection_name,
+        points_selector=models.FilterSelector(
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="file_path", match=models.MatchValue(value=file_path.as_posix())
+                    )
+                ]
+            )
+        ),
+    )
 
 
 def search_chunks(
