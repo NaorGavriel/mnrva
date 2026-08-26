@@ -4,6 +4,9 @@ import time
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from qdrant_client import QdrantClient
 
 from chunks import get_chunks_by_id, upsert_chunks
@@ -24,8 +27,6 @@ from repository_clone import (
     prune_unwanted_files,
 )
 from repository_parser import list_source_files, list_unwanted_files
-
-load_dotenv()
 
 REPOSITORY_FILES_DIR = Path("repository_files")
 ENRICHMENT_MAX_CONCURRENCY = int(os.environ["ENRICHMENT_MAX_CONCURRENCY"])
