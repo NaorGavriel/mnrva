@@ -65,6 +65,37 @@ def clone_full_repository(github_url: str, dest_dir: Path) -> Path:
     return dest_dir
 
 
+def get_remote_head_sha(github_url: str) -> str:
+    """Return origin's current HEAD commit sha via `git ls-remote`, no clone."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", github_url, "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise CloneError(f"failed to read HEAD of {github_url!r}: {e.stderr}") from e
+    return result.stdout.split()[0]
+
+
+def clone_for_diffing(github_url: str, dest_dir: Path) -> Path:
+    """Partial, checkout-less clone of `github_url` into `dest_dir`.
+    clones commit/tree objects only, nothing ever written outside `.git/`."""
+    if dest_dir.exists():
+        _rmtree(dest_dir)
+    try:
+        subprocess.run(
+            ["git", "clone", "--filter=blob:none", "--no-checkout", github_url, str(dest_dir)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise CloneError(f"failed to clone {github_url!r}: {e.stderr}") from e
+    return dest_dir
+
+
 def update_repository(repo_path: Path, commit_sha: str) -> None:
     """Bring an existing full clone at `repo_path` up to `commit_sha`.
 
