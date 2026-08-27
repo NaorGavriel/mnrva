@@ -223,4 +223,4 @@ data/
 docs/query_agent_server.md
 docs/refresh_sync_deployment.md
 docs/refresh_sync_pipeline.md
-client/node_modules
+frontend/node_modules
