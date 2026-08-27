@@ -98,8 +98,8 @@ All LLM nodes run on `AGENT_MODEL` (env var).
 
 LangGraph's Postgres checkpointer persists all of `AgentState` per
 `thread_id`. `thread_id` scopes *conversation* history only.
-`agent_messages.py` is a thin wrapper handing back a configured
-`PostgresSaver` over `db_postgres.py`'s connection.
+`checkpointer_postgres.py` is a thin wrapper handing back a configured
+`AsyncPostgresSaver` over `db_postgres.py`'s connection pool.
 
 ```python
 class TurnContext(TypedDict):
@@ -146,7 +146,7 @@ AIMessage(
 
 1. Caller starts a conversation with some `thread_id`, against some
    already-running agent process, appending a `HumanMessage(question)` to
-   `messages` before calling `graph.invoke()`.
+   `messages` before calling `graph.ainvoke()`/`graph.astream()` (§2.6).
 2. The graph runs `build_conversation_window → evaluate_question →
    retrieve_documents → grade_documents → generate_answer →
    evaluate_answer` once, correcting via re-retrieval (up to the attempt
@@ -181,3 +181,11 @@ AIMessage(
   — a document-relevance check alone can pass (some chunks are on-topic)
   while the synthesized answer still falls short; gating the loop on the
   answer catches that.
+
+## 2.6 Streaming & serving
+
+The graph runs async end-to-end, invoked via `ainvoke`/`astream`.
+Served by `query_agent/api.py`, a FastAPI app whose lifespan opens the
+async Qdrant client and Postgres pool once and builds the graph once.
+`POST /threads/{thread_id}/query` streams the turn as Server-Sent Events,
+one event per finished node.
