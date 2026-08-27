@@ -4,6 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import db.db_qdrant as db_qdrant
+from db.db_postgres import init_pool
 from code_parser import extract_chunks, parse_code_file
 from embeddings import embed_text
 from enrichment import enrich_chunks
@@ -161,7 +162,9 @@ def test_query_agent_graph() -> None:
     """Run the compiled query-agent graph end to end against live Qdrant/OpenAI.
 
     Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
-    graph = build_graph()
+    client = db_qdrant.init_client(url=db_qdrant.QDRANT_URL, api_key=db_qdrant.QDRANT_API_KEY)
+    pool = init_pool()
+    graph = build_graph(client, pool)
 
     q = "How is authentication implemented?"
     result = start_turn(graph, "test-4", q, BasicEffort())
@@ -184,8 +187,11 @@ def test_query_agent_graph() -> None:
 
 
 def test_query_agent_graph_persists_across_turns() -> None:
+    client = db_qdrant.init_client(url=db_qdrant.QDRANT_URL, api_key=db_qdrant.QDRANT_API_KEY)
+    pool = init_pool()
+
     build_start = time.perf_counter()
-    graph = build_graph()
+    graph = build_graph(client, pool)
     print(f"build_graph: {time.perf_counter() - build_start:.2f}s")
 
     q1 = "Is there a logging system implemented?"
