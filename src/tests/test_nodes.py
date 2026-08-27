@@ -28,11 +28,11 @@ class FakeStructuredLLM:
         self._outputs = list(outputs)
         self.invoke_calls: list = []
 
-    def invoke(self, input, *args, **kwargs):
+    async def ainvoke(self, input, *args, **kwargs):
         self.invoke_calls.append(input)
         return self._outputs.pop(0)
 
-    def batch(self, inputs, *args, **kwargs):
+    async def abatch(self, inputs, *args, **kwargs):
         self.invoke_calls.extend(inputs)
         outputs, self._outputs = self._outputs[: len(inputs)], self._outputs[len(inputs) :]
         return outputs
@@ -72,7 +72,7 @@ class FakeRecord:
         self.id = id
 
 
-class FakeQdrantClient:
+class FakeAsyncQdrantClient:
     """Records query_points/retrieve calls and returns canned responses, instead of hitting a real Qdrant server."""
 
     def __init__(
@@ -85,11 +85,11 @@ class FakeQdrantClient:
         self._query_response = query_response if query_response is not None else FakeQueryResponse([])
         self._retrieve_response = retrieve_response if retrieve_response is not None else []
 
-    def query_points(self, **kwargs) -> FakeQueryResponse:
+    async def query_points(self, **kwargs) -> FakeQueryResponse:
         self.query_points_calls.append(kwargs)
         return self._query_response
 
-    def retrieve(self, **kwargs) -> list[FakeRecord]:
+    async def retrieve(self, **kwargs) -> list[FakeRecord]:
         self.retrieve_calls.append(kwargs)
         return self._retrieve_response
 
@@ -148,21 +148,21 @@ def _search_result(*, id: str = "id-1", file_path: str = "src/auth.py", symbol_n
     }
 
 
-def test_build_conversation_window_node_is_noop_on_the_first_turn() -> None:
-    client = FakeQdrantClient()
+async def test_build_conversation_window_node_is_noop_on_the_first_turn() -> None:
+    client = FakeAsyncQdrantClient()
     node = make_build_conversation_window_node(client, "code_chunks")
     state: AgentState = {"messages": [HumanMessage(content="how does auth work?")]}
 
-    result = node(state)
+    result = await node(state)
 
     assert result == {"conversation_window": [], "conversation_history": ""}
     assert client.retrieve_calls == []
 
 
-def test_build_conversation_window_node_builds_a_turn_from_the_completed_previous_turn() -> None:
+async def test_build_conversation_window_node_builds_a_turn_from_the_completed_previous_turn() -> None:
     """messages[-1] is the *current* turn's question (added by the caller before invoke) -
     the completed turn to fold in is the Human/AI pair just before it."""
-    client = FakeQdrantClient()
+    client = FakeAsyncQdrantClient()
     node = make_build_conversation_window_node(client, "code_chunks")
     state: AgentState = {
         "messages": [
@@ -172,7 +172,7 @@ def test_build_conversation_window_node_builds_a_turn_from_the_completed_previou
         ]
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert result["conversation_window"] == [
         {"question": "how does auth work?", "answer": "Auth uses JWT.", "cited_context": ""}
@@ -182,8 +182,8 @@ def test_build_conversation_window_node_builds_a_turn_from_the_completed_previou
     assert client.retrieve_calls == []
 
 
-def test_build_conversation_window_node_resolves_the_previous_answers_citations() -> None:
-    client = FakeQdrantClient(retrieve_response=[_make_record("id-1", context_text="used to authenticate")])
+async def test_build_conversation_window_node_resolves_the_previous_answers_citations() -> None:
+    client = FakeAsyncQdrantClient(retrieve_response=[_make_record("id-1", context_text="used to authenticate")])
     node = make_build_conversation_window_node(client, "code_chunks")
     state: AgentState = {
         "messages": [
@@ -193,7 +193,7 @@ def test_build_conversation_window_node_resolves_the_previous_answers_citations(
         ]
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert client.retrieve_calls[0]["collection_name"] == "code_chunks"
     assert client.retrieve_calls[0]["ids"] == ["id-1"]
@@ -203,11 +203,11 @@ def test_build_conversation_window_node_resolves_the_previous_answers_citations(
     assert "src/auth.py" in result["conversation_history"]
 
 
-def test_build_conversation_window_node_evicts_the_oldest_turn_once_over_the_cap(monkeypatch) -> None:
+async def test_build_conversation_window_node_evicts_the_oldest_turn_once_over_the_cap(monkeypatch) -> None:
     import query_agent.nodes as nodes_module
 
     monkeypatch.setattr(nodes_module, "CONVERSATION_WINDOW_TURNS", 2)
-    client = FakeQdrantClient()
+    client = FakeAsyncQdrantClient()
     node = make_build_conversation_window_node(client, "code_chunks")
     state: AgentState = {
         "conversation_window": [
@@ -221,12 +221,12 @@ def test_build_conversation_window_node_evicts_the_oldest_turn_once_over_the_cap
         ],
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert [turn["question"] for turn in result["conversation_window"]] == ["q2", "q3"]
 
 
-def test_evaluate_question_node_returns_the_structured_fields() -> None:
+async def test_evaluate_question_node_returns_the_structured_fields() -> None:
     result = EvaluateQuestion(
         question_type="implementation",
         synthesized_query="how is auth implemented in the codebase",
@@ -237,7 +237,7 @@ def test_evaluate_question_node_returns_the_structured_fields() -> None:
     node = make_evaluate_question_node(llm)
     state: AgentState = {"question": "how is auth implemented?"}
 
-    output = node(state)
+    output = await node(state)
 
     assert output == {
         "question_type": "implementation",
@@ -247,7 +247,7 @@ def test_evaluate_question_node_returns_the_structured_fields() -> None:
     }
 
 
-def test_evaluate_question_node_folds_conversation_window_into_the_prompt() -> None:
+async def test_evaluate_question_node_folds_conversation_window_into_the_prompt() -> None:
     result = EvaluateQuestion(
         question_type="implementation",
         synthesized_query="what does the retry logic in payments do",
@@ -264,7 +264,7 @@ def test_evaluate_question_node_folds_conversation_window_into_the_prompt() -> N
         ),
     }
 
-    node(state)
+    await node(state)
 
     prompt = llm.structured.invoke_calls[0][1].content
     assert "how does auth work?" in prompt
@@ -273,13 +273,17 @@ def test_evaluate_question_node_folds_conversation_window_into_the_prompt() -> N
     assert "no, I meant the retry logic" in prompt
 
 
-def test_retrieve_documents_node_searches_with_search_query_and_filters(monkeypatch) -> None:
-    monkeypatch.setattr(chunks, "embed_text", lambda text: [0.1, 0.2, 0.3])
-    client = FakeQdrantClient(query_response=FakeQueryResponse([_make_point(score=0.9)]))
+async def _fake_aembed_text(text: str) -> list[float]:
+    return [0.1, 0.2, 0.3]
+
+
+async def test_retrieve_documents_node_searches_with_search_query_and_filters(monkeypatch) -> None:
+    monkeypatch.setattr(chunks, "aembed_text", _fake_aembed_text)
+    client = FakeAsyncQdrantClient(query_response=FakeQueryResponse([_make_point(score=0.9)]))
     node = make_retrieve_documents_node(client, "code_chunks")
     state: AgentState = {"search_query": "how does auth work?", "search_filters": {"language": None}, "retrieved_chunks":{}}
 
-    result = node(state)
+    result = await node(state)
 
     assert result["retrieval_attempts"] == 1
     [chunk] = result["retrieved_chunks"].values()
@@ -288,9 +292,9 @@ def test_retrieve_documents_node_searches_with_search_query_and_filters(monkeypa
     assert chunk["score"] == 0.9
 
 
-def test_retrieve_documents_node_increments_retrieval_attempts_from_existing_state(monkeypatch) -> None:
-    monkeypatch.setattr(chunks, "embed_text", lambda text: [0.1, 0.2, 0.3])
-    client = FakeQdrantClient()
+async def test_retrieve_documents_node_increments_retrieval_attempts_from_existing_state(monkeypatch) -> None:
+    monkeypatch.setattr(chunks, "aembed_text", _fake_aembed_text)
+    client = FakeAsyncQdrantClient()
     node = make_retrieve_documents_node(client, "code_chunks")
     state: AgentState = {
         "search_query": "how does auth work?",
@@ -299,7 +303,7 @@ def test_retrieve_documents_node_increments_retrieval_attempts_from_existing_sta
         "retrieved_chunks":{}
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert result["retrieval_attempts"] == 3
 
@@ -308,7 +312,7 @@ def _conversation_history() -> str:
     return "Conversation history:\nQ: how does auth work?\nA: Auth uses JWT.\n\n"
 
 
-def test_grade_documents_node_folds_conversation_window_into_the_prompt() -> None:
+async def test_grade_documents_node_folds_conversation_window_into_the_prompt() -> None:
     llm = FakeLLM([GradeDocument(relevant="yes")])
     node = make_grade_documents_node(llm)
     state: AgentState = {
@@ -318,14 +322,14 @@ def test_grade_documents_node_folds_conversation_window_into_the_prompt() -> Non
         "conversation_history": _conversation_history(),
     }
 
-    node(state)
+    await node(state)
 
     prompt = llm.structured.invoke_calls[0][1].content
     assert "how does auth work?" in prompt
     assert "Auth uses JWT." in prompt
 
 
-def test_grade_documents_node_grades_each_not_yet_graded_chunk() -> None:
+async def test_grade_documents_node_grades_each_not_yet_graded_chunk() -> None:
     llm = FakeLLM([GradeDocument(relevant="yes"), GradeDocument(relevant="no")])
     node = make_grade_documents_node(llm)
     state: AgentState = {
@@ -337,12 +341,12 @@ def test_grade_documents_node_grades_each_not_yet_graded_chunk() -> None:
         "chunk_relevance": {},
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert result["chunk_relevance"] == {"id-1": "yes", "id-2": "no"}
 
 
-def test_grade_documents_node_skips_already_graded_chunks() -> None:
+async def test_grade_documents_node_skips_already_graded_chunks() -> None:
     llm = FakeLLM([GradeDocument(relevant="no")])
     node = make_grade_documents_node(llm)
     state: AgentState = {
@@ -351,12 +355,12 @@ def test_grade_documents_node_skips_already_graded_chunks() -> None:
         "chunk_relevance": {"id-1": "yes"},
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert result["chunk_relevance"] == {"id-1": "yes", "id-2": "no"}
 
 
-def test_generate_answer_node_uses_only_yes_labeled_chunks() -> None:
+async def test_generate_answer_node_uses_only_yes_labeled_chunks() -> None:
     generated = GeneratedAnswer(text="Auth is handled in authenticate().", cited_chunk_ids=["id-1"])
     llm = FakeLLM([generated])
     node = make_generate_answer_node(llm)
@@ -369,7 +373,7 @@ def test_generate_answer_node_uses_only_yes_labeled_chunks() -> None:
         "chunk_relevance": {"id-1": "yes", "id-2": "no"},
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert result == {
         "answer": Answer(
@@ -383,7 +387,7 @@ def test_generate_answer_node_uses_only_yes_labeled_chunks() -> None:
     assert "src/unrelated.py" not in prompt
 
 
-def test_generate_answer_node_drops_hallucinated_chunk_ids() -> None:
+async def test_generate_answer_node_drops_hallucinated_chunk_ids() -> None:
     generated = GeneratedAnswer(text="Auth is handled in authenticate().", cited_chunk_ids=["id-1", "not-a-real-id"])
     llm = FakeLLM([generated])
     node = make_generate_answer_node(llm)
@@ -393,12 +397,12 @@ def test_generate_answer_node_drops_hallucinated_chunk_ids() -> None:
         "chunk_relevance": {"id-1": "yes"},
     }
 
-    result = node(state)
+    result = await node(state)
 
     assert [c.chunk_id for c in result["answer"].citations] == ["id-1"]
 
 
-def test_generate_answer_node_folds_conversation_window_into_the_prompt() -> None:
+async def test_generate_answer_node_folds_conversation_window_into_the_prompt() -> None:
     generated = GeneratedAnswer(text="It also handles images.", cited_chunk_ids=[])
     llm = FakeLLM([generated])
     node = make_generate_answer_node(llm)
@@ -409,14 +413,14 @@ def test_generate_answer_node_folds_conversation_window_into_the_prompt() -> Non
         "conversation_history": _conversation_history(),
     }
 
-    node(state)
+    await node(state)
 
     prompt = llm.structured.invoke_calls[0][1].content
     assert "how does auth work?" in prompt
     assert "Auth uses JWT." in prompt
 
 
-def test_evaluate_answer_node_returns_good_grade_without_touching_search_query() -> None:
+async def test_evaluate_answer_node_returns_good_grade_without_touching_search_query() -> None:
     result = EvaluateAnswer(grade="good", reasoning="Answer is accurate and complete.")
     llm = FakeLLM([result])
     node = make_evaluate_answer_node(llm)
@@ -426,12 +430,12 @@ def test_evaluate_answer_node_returns_good_grade_without_touching_search_query()
         "answer": Answer(text="Auth uses JWT.", citations=[]),
     }
 
-    output = node(state)
+    output = await node(state)
 
     assert output == {"answer_grade": "good", "evaluation_reasoning": "Answer is accurate and complete."}
 
 
-def test_evaluate_answer_node_replaces_search_query_with_revised_query_on_bad_grade() -> None:
+async def test_evaluate_answer_node_replaces_search_query_with_revised_query_on_bad_grade() -> None:
     result = EvaluateAnswer(
         grade="bad",
         reasoning="Doesn't mention token expiry.",
@@ -445,13 +449,13 @@ def test_evaluate_answer_node_replaces_search_query_with_revised_query_on_bad_gr
         "answer": Answer(text="Auth uses JWT.", citations=[]),
     }
 
-    output = node(state)
+    output = await node(state)
 
     assert output["answer_grade"] == "bad"
     assert output["search_query"] == "token expiry handling in auth"
 
 
-def test_evaluate_answer_node_folds_conversation_window_into_the_prompt() -> None:
+async def test_evaluate_answer_node_folds_conversation_window_into_the_prompt() -> None:
     result = EvaluateAnswer(grade="good", reasoning="Resolves the follow-up.")
     llm = FakeLLM([result])
     node = make_evaluate_answer_node(llm)
@@ -462,7 +466,7 @@ def test_evaluate_answer_node_folds_conversation_window_into_the_prompt() -> Non
         "conversation_history": _conversation_history(),
     }
 
-    node(state)
+    await node(state)
 
     prompt = llm.structured.invoke_calls[0][1].content
     assert "how does auth work?" in prompt

@@ -1,6 +1,6 @@
 import os
 
-from qdrant_client import QdrantClient, models
+from qdrant_client import AsyncQdrantClient, QdrantClient, models
 
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "bm25"
@@ -15,6 +15,13 @@ def init_client(url: str | None = None, api_key: str | None = None) -> QdrantCli
     if url is not None:
         return QdrantClient(url=url, api_key=api_key)
     raise ValueError("init_client requires url")
+
+
+def init_async_client(url: str | None = None, api_key: str | None = None) -> AsyncQdrantClient:
+    """Async twin of init_client."""
+    if url is not None:
+        return AsyncQdrantClient(url=url, api_key=api_key)
+    raise ValueError("init_async_client requires url")
 
 
 def ensure_collection(client: QdrantClient, name: str) -> None:
