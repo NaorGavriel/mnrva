@@ -1,6 +1,9 @@
 from pathlib import PurePosixPath
 
 from qdrant_client import models as qdrant_models
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import chunks
 from chunks import delete_chunks_by_path, get_chunks_by_id, search_chunks, upsert_chunks
