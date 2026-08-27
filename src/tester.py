@@ -2,6 +2,9 @@ import asyncio
 import time
 from collections import defaultdict
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import db.db_qdrant as db_qdrant
 from db.db_postgres import init_pool
