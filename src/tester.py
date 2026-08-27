@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import db.db_qdrant as db_qdrant
-from db.db_postgres import init_pool
+from db.db_postgres import init_async_pool
 from code_parser import extract_chunks, parse_code_file
 from embeddings import embed_text
 from enrichment import enrich_chunks
@@ -147,8 +147,8 @@ def test_find_chunk_id_collisions() -> None:
                 f"class_name={chunk.class_name!r} symbol_name={chunk.symbol_name!r}"
             )
 
-def start_turn(graph: CompiledStateGraph, thread_id: str, question: str, effort: Effort | None = None) -> dict:
-    return graph.invoke(
+async def start_turn(graph: CompiledStateGraph, thread_id: str, question: str, effort: Effort | None = None) -> dict:
+    return await graph.ainvoke(
         {
             "question": question,
             "messages": [HumanMessage(content=question)],
@@ -161,16 +161,16 @@ def start_turn(graph: CompiledStateGraph, thread_id: str, question: str, effort:
     )
 
 
-def test_query_agent_graph() -> None:
+async def test_query_agent_graph() -> None:
     """Run the compiled query-agent graph end to end against live Qdrant/OpenAI.
 
     Requires TEST_REPO_URL to already be ingested (test_ingest_repository)."""
-    client = db_qdrant.init_client(url=db_qdrant.QDRANT_URL, api_key=db_qdrant.QDRANT_API_KEY)
-    pool = init_pool()
-    graph = build_graph(client, pool)
+    client = db_qdrant.init_async_client(url=db_qdrant.QDRANT_URL, api_key=db_qdrant.QDRANT_API_KEY)
+    pool = await init_async_pool()
+    graph = await build_graph(client, pool)
 
     q = "How is authentication implemented?"
-    result = start_turn(graph, "test-4", q, BasicEffort())
+    result = await start_turn(graph, "test-4", q, BasicEffort())
 
 
     #print(f"question_type: {result['question_type']}")
@@ -189,12 +189,12 @@ def test_query_agent_graph() -> None:
     #    print(f"  {citation.file_path}:{citation.start_line}-{citation.end_line}")
 
 
-def test_query_agent_graph_persists_across_turns() -> None:
-    client = db_qdrant.init_client(url=db_qdrant.QDRANT_URL, api_key=db_qdrant.QDRANT_API_KEY)
-    pool = init_pool()
+async def test_query_agent_graph_persists_across_turns() -> None:
+    client = db_qdrant.init_async_client(url=db_qdrant.QDRANT_URL, api_key=db_qdrant.QDRANT_API_KEY)
+    pool = await init_async_pool()
 
     build_start = time.perf_counter()
-    graph = build_graph(client, pool)
+    graph = await build_graph(client, pool)
     print(f"build_graph: {time.perf_counter() - build_start:.2f}s")
 
     q1 = "Is there a logging system implemented?"
@@ -202,17 +202,17 @@ def test_query_agent_graph_persists_across_turns() -> None:
     q3 = "are you sure?"
 
     turn_start = time.perf_counter()
-    result1 = start_turn(graph, "test-6", q1, BasicEffort())
+    result1 = await start_turn(graph, "test-6", q1, BasicEffort())
     print(f"turn 1: {time.perf_counter() - turn_start:.2f}s — messages: {len(result1['messages'])}")
     print(f"turn 1 — answer:\n{result1['answer'].text}")
 
     turn_start = time.perf_counter()
-    result2 = start_turn(graph, "test-6", q2, BasicEffort())
+    result2 = await start_turn(graph, "test-6", q2, BasicEffort())
     print(f"turn 2: {time.perf_counter() - turn_start:.2f}s — messages: {len(result2['messages'])}")
     print(f"turn 2 — answer:\n{result2['answer'].text}")
 
     turn_start = time.perf_counter()
-    result3 = start_turn(graph, "test-6", q3, BasicEffort())
+    result3 = await start_turn(graph, "test-6", q3, BasicEffort())
     print(f"turn 3: {time.perf_counter() - turn_start:.2f}s — messages: {len(result3['messages'])}")
     print(f"turn 3 — answer:\n{result3['answer'].text}")
 
@@ -224,5 +224,5 @@ if __name__ == "__main__":
     #test_enrich_chunks()
     #test_ingest_repository()
     #test_find_chunk_id_collisions()
-    test_query_agent_graph()
-    #test_query_agent_graph_persists_across_turns()
+    asyncio.run(test_query_agent_graph())
+    #asyncio.run(test_query_agent_graph_persists_across_turns())

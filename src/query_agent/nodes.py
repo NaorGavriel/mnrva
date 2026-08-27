@@ -1,11 +1,11 @@
 import os
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import Runnable
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 
-from chunks import get_chunks_by_id, search_chunks
+from chunks import aget_chunks_by_id, asearch_chunks
 from query_agent.agent_prompts import (
     EVALUATE_ANSWER_SYSTEM_PROMPT,
     EVALUATE_QUESTION_SYSTEM_PROMPT,
@@ -35,7 +35,9 @@ def _format_conversation_history(conversation_window: list[TurnContext]) -> str:
     return f"Conversation history:\n{history}\n\n" if history else ""
 
 
-def make_build_conversation_window_node(client: QdrantClient, collection_name: str) -> Callable[[AgentState], dict]:
+def make_build_conversation_window_node(
+    client: AsyncQdrantClient, collection_name: str
+) -> Callable[[AgentState], Awaitable[dict]]:
     """Build the `build_conversation_window` node, bound to a Qdrant `client`/`collection_name`.
 
     Turns the previous turn into one `conversation_window` entry - question, answer, and the
@@ -45,14 +47,14 @@ def make_build_conversation_window_node(client: QdrantClient, collection_name: s
     each reformatting `conversation_window` themselves. No-op on the first turn.
     """
 
-    def build_conversation_window_node(state: AgentState) -> dict:
+    async def build_conversation_window_node(state: AgentState) -> dict:
         messages = state.get("messages", [])
         window = list(state.get("conversation_window", []))
 
         if len(messages) >= 3:  # there's a completed previous turn to fold in
             prev_question, prev_answer = messages[-3], messages[-2]
             citation_ids = prev_answer.additional_kwargs.get("citations", [])
-            cited_chunks = get_chunks_by_id(client, collection_name, citation_ids) if citation_ids else []
+            cited_chunks = await aget_chunks_by_id(client, collection_name, citation_ids) if citation_ids else []
             cited_context = "\n\n".join(
                 f"file_path={chunk.path.as_posix()} start_line={chunk.start_line} end_line={chunk.end_line}\n"
                 f"{chunk.symbol_name}:\n{chunk.context_text}"
@@ -73,14 +75,14 @@ def make_build_conversation_window_node(client: QdrantClient, collection_name: s
     return build_conversation_window_node
 
 
-def make_evaluate_question_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
+def make_evaluate_question_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], Awaitable[dict]]:
     """Build the `evaluate_question` node: classifies the question and produces a synthesized search query + filters."""
     structured_llm = llm.with_structured_output(EvaluateQuestion)
 
-    def evaluate_question_node(state: AgentState) -> dict:
+    async def evaluate_question_node(state: AgentState) -> dict:
         question_prompt = f"{state.get('conversation_history', '')}{state['question']}"
 
-        result: EvaluateQuestion = structured_llm.invoke(
+        result: EvaluateQuestion = await structured_llm.ainvoke(
             [SystemMessage(EVALUATE_QUESTION_SYSTEM_PROMPT), HumanMessage(question_prompt)]
         )
 
@@ -94,12 +96,14 @@ def make_evaluate_question_node(llm: Runnable[Any, AIMessage]) -> Callable[[Agen
     return evaluate_question_node
 
 
-def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> Callable[[AgentState], dict]:
+def make_retrieve_documents_node(
+    client: AsyncQdrantClient, collection_name: str
+) -> Callable[[AgentState], Awaitable[dict]]:
     """Build the `retrieve_documents` node, bound to a Qdrant `client`/`collection_name`."""
 
-    def retrieve_documents_node(state: AgentState) -> dict:
+    async def retrieve_documents_node(state: AgentState) -> dict:
         filters = state["search_filters"]
-        chunks = search_chunks(
+        chunks = await asearch_chunks(
             client,
             collection_name,
             state["search_query"],
@@ -115,11 +119,11 @@ def make_retrieve_documents_node(client: QdrantClient, collection_name: str) -> 
     return retrieve_documents_node
 
 
-def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
+def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], Awaitable[dict]]:
     """Build the `grade_documents` node: labels each not-yet-graded retrieved chunk yes/no for relevance to the question."""
     structured_llm = llm.with_structured_output(GradeDocument)
 
-    def grade_documents_node(state: AgentState) -> dict:
+    async def grade_documents_node(state: AgentState) -> dict:
         chunk_relevance = dict(state.get("chunk_relevance", {}))
         ungraded = [chunk for chunk in state["retrieved_chunks"].values() if chunk["id"] not in chunk_relevance]
         if not ungraded:
@@ -138,7 +142,7 @@ def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
             ]
             for chunk in ungraded
         ]
-        results: list[GradeDocument] = structured_llm.batch(prompts, config={"max_concurrency": GRADE_MAX_CONCURRENCY})
+        results: list[GradeDocument] = await structured_llm.abatch(prompts, config={"max_concurrency": GRADE_MAX_CONCURRENCY})
         for chunk, result in zip(ungraded, results):
             chunk_relevance[chunk["id"]] = result.relevant
         return {"chunk_relevance": chunk_relevance}
@@ -146,7 +150,7 @@ def make_grade_documents_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
     return grade_documents_node
 
 
-def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
+def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], Awaitable[dict]]:
     """Build the `generate_answer` node: yes-labeled chunks + question -> a structured `Answer` with citations.
 
     The LLM only produces the answer text and the chunk_ids it drew from; citation metadata
@@ -154,7 +158,7 @@ def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
     """
     structured_llm = llm.with_structured_output(GeneratedAnswer)
 
-    def generate_answer_node(state: AgentState) -> dict:
+    async def generate_answer_node(state: AgentState) -> dict:
         relevant_chunks = [chunk for chunk in state["retrieved_chunks"].values() if state["chunk_relevance"].get(chunk["id"]) == "yes"]
         chunks_by_id = {chunk["id"]: chunk for chunk in relevant_chunks}
 
@@ -165,7 +169,7 @@ def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
         )
         prompt = f"{state.get('conversation_history', '')}User's question:\n{state['question']}\n\nRetrieved chunks:\n{context}"
 
-        generated: GeneratedAnswer = structured_llm.invoke(
+        generated: GeneratedAnswer = await structured_llm.ainvoke(
             [SystemMessage(GENERATE_ANSWER_SYSTEM_PROMPT), HumanMessage(prompt)]
         )
 
@@ -185,12 +189,12 @@ def make_generate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
     return generate_answer_node
 
 
-def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], dict]:
+def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentState], Awaitable[dict]]:
     """Build the `evaluate_answer` node: grades the generated Answer against the original question,
     replacing search_query with a revised, standalone query on a bad grade to drive re-retrieval."""
     structured_llm = llm.with_structured_output(EvaluateAnswer)
 
-    def evaluate_answer_node(state: AgentState) -> dict:
+    async def evaluate_answer_node(state: AgentState) -> dict:
         answer = state["answer"]
         citations = "\n".join(
             f"- {citation.file_path}:{citation.start_line}-{citation.end_line}"
@@ -202,7 +206,7 @@ def make_evaluate_answer_node(llm: Runnable[Any, AIMessage]) -> Callable[[AgentS
             f"Generated answer:\n{answer.text}\n\n"
             f"Citations:\n{citations}"
         )
-        result: EvaluateAnswer = structured_llm.invoke(
+        result: EvaluateAnswer = await structured_llm.ainvoke(
             [SystemMessage(EVALUATE_ANSWER_SYSTEM_PROMPT), HumanMessage(prompt)]
         )
         answer_grading: dict = {"answer_grade": result.grade, "evaluation_reasoning": result.reasoning}

@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from psycopg_pool import ConnectionPool
-from qdrant_client import QdrantClient
-from query_agent.checkpointer_postgres import init_checkpointer
+from psycopg_pool import AsyncConnectionPool
+from qdrant_client import AsyncQdrantClient
+from query_agent.checkpointer_postgres import init_async_checkpointer
 
 from db.db_qdrant import COLLECTION_NAME
 from query_agent.nodes import (
@@ -31,12 +31,12 @@ def _route_after_evaluate_answer(state: AgentState) -> str:
     return "persist_agent_message"
 
 
-def build_graph(client: QdrantClient, pool: ConnectionPool) -> CompiledStateGraph:
+async def build_graph(client: AsyncQdrantClient, pool: AsyncConnectionPool) -> CompiledStateGraph:
     """Assemble the query agent's graph: build_conversation_window -> evaluate_question -> retrieve_documents ->
     grade_documents -> generate_answer -> evaluate_answer, looping back to retrieve_documents on a bad grade.
 
-    Takes an already-open Qdrant `client` and Postgres `pool` - the caller owns constructing and
-    closing both, matching how the refresh pipeline (mnrva/refresh.py) already does it.
+    Takes an already-open async Qdrant `client` and Postgres `pool` - the caller owns constructing
+    and closing both.
     """
     llm = ChatOpenAI(model=os.environ["AGENT_MODEL"])
 
@@ -64,6 +64,6 @@ def build_graph(client: QdrantClient, pool: ConnectionPool) -> CompiledStateGrap
     graph.add_edge("persist_agent_message", END)
 
     # checkpointer
-    checkpointer = init_checkpointer(pool=pool)
+    checkpointer = await init_async_checkpointer(pool=pool)
 
     return graph.compile(checkpointer=checkpointer)

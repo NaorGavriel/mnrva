@@ -26,6 +26,12 @@ def embed_text(text: str) -> list[float]:
     return response.data[0].embedding
 
 
+async def aembed_text(text: str) -> list[float]:
+    """Async twin of embed_text: embed a single string, gated by the shared rate limiter."""
+    [embedding] = await embed_texts([text])
+    return embedding
+
+
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Embed a batch of strings in one API call, gated by the shared rate limiter; order matches input order."""
     if not texts:
