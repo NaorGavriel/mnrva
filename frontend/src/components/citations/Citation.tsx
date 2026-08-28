@@ -9,14 +9,15 @@ import "./Citation.css";
 
 interface CitationProps {
   citation: CitationType;
+  revealDelayMs?: number;
 }
 
-/** One collapsible, syntax-highlighted citation excerpt - code via Prism, prose (.md) via markdown. */
-export default function Citation({ citation }: CitationProps) {
+/** One collapsible, syntax-highlighted citation excerpt - code via Prism, prose (.md) via markdown. `revealDelayMs` staggers its fade-in relative to sibling citations. */
+export default function Citation({ citation, revealDelayMs = 0 }: CitationProps) {
   const codeStyle = usePrefersDark() ? oneDark : oneLight;
 
   return (
-    <details className="citation">
+    <details className="citation" style={{ animationDelay: `${revealDelayMs}ms` }}>
       <summary>
         <span className="citation-chevron" aria-hidden="true" />
         <FileIcon className="citation-file-icon" />

@@ -12,8 +12,8 @@ export default function CitationList({ citations }: CitationListProps) {
 
   return (
     <div className="citation-list">
-      {citations.map((citation) => (
-        <Citation key={citation.chunk_id} citation={citation} />
+      {citations.map((citation, index) => (
+        <Citation key={citation.chunk_id} citation={citation} revealDelayMs={index * 60} />
       ))}
     </div>
   );
