@@ -12,8 +12,12 @@ interface RepoHeaderProps {
 export default function RepoHeader({ repo, isLanding }: RepoHeaderProps) {
   return (
     <div className={`chat-header-text${isLanding ? "" : " chat-header-text--chat"}`}>
-      <h1 className="chat-repo-name">{repo ? repoNameFromUrl(repo.github_url) : "mnrva"}</h1>
-      <p className="chat-tagline">indexed by mnrva</p>
+      <div className="chat-title-group">
+        <h1 className="chat-repo-name">{repo ? repoNameFromUrl(repo.github_url) : "mnrva"}</h1>
+        <p className="chat-tagline">
+          indexed by <span className="chat-tagline-accent">mnrva</span>
+        </p>
+      </div>
       {repo && <p className="chat-synced">last synced {timeAgo(repo.updated_at)}</p>}
     </div>
   );

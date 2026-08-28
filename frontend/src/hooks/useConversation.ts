@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createThread, streamQuery } from "../api/client.ts";
-import type { Citation, Effort } from "../types.ts";
+import type { Citation, Effort, QueryStepNode } from "../types.ts";
 
 export interface UserTurn {
   role: "user";
@@ -10,7 +10,7 @@ export interface UserTurn {
 export interface AgentTurn {
   role: "agent";
   phase: "streaming" | "done" | "error";
-  progressStep?: string;
+  currentStep?: QueryStepNode;
   answer?: string;
   citations?: Citation[];
   error?: string;
@@ -66,7 +66,7 @@ export function useConversation(): UseConversation {
             } else if (event.node === "error") {
               updateLastAgentTurn({ phase: "error", error: event.data.message });
             } else {
-              updateLastAgentTurn({ progressStep: event.data.label });
+              updateLastAgentTurn({ currentStep: event.node });
             }
           }
         } catch (err) {

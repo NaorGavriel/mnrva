@@ -1,15 +1,31 @@
 .chat-status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--text-dim);
   font-size: 14px;
 }
 
-.chat-status-dot {
+.chat-status-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chat-status-step {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  background: var(--border);
+  transition: background 0.2s ease;
+}
+
+.chat-status-step--done {
+  background: var(--accent);
+}
+
+.chat-status-step--current {
   background: var(--accent);
   animation: chat-pulse 1.4s ease-in-out infinite;
 }

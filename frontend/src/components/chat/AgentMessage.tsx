@@ -18,7 +18,7 @@ export default function AgentMessage({ turn }: AgentMessageProps) {
         <LogoMark className="chat-answer-icon" />
         mnrva
       </div>
-      {turn.phase === "streaming" && <ProgressStatus label={turn.progressStep ?? "Working..."} />}
+      {turn.phase === "streaming" && <ProgressStatus currentStep={turn.currentStep} />}
       {turn.phase === "error" && <ErrorMessage message={turn.error ?? "Something went wrong."} />}
       {turn.phase === "done" && (
         <>
