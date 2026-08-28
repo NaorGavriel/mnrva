@@ -54,6 +54,7 @@ async def sync_repository(
     new_sha = get_remote_head_sha(github_url)
 
     if old_sha == new_sha:
+        update_commit_sha(pool, new_sha)
         return RefreshResult(added=0, modified=0, deleted=0, old_sha=old_sha, new_sha=new_sha)
 
     clone_for_diffing(github_url, repo_path)
