@@ -4,6 +4,7 @@ import Navbar from "./components/layout/Navbar.tsx";
 import RepoHeader from "./components/layout/RepoHeader.tsx";
 import ChatBody from "./components/chat/ChatBody.tsx";
 import InputBox from "./components/input/InputBox.tsx";
+import ExamplePrompts from "./components/input/ExamplePrompts.tsx";
 import "./App.css";
 
 export default function App() {
@@ -18,7 +19,10 @@ export default function App() {
 
       {isLanding ? (
         <div className="chat-landing">
-          <InputBox onSend={sendMessage} disabled={status === "streaming"} effort={effort} onEffortChange={setEffort} />
+          <div className="chat-landing-composer">
+            <InputBox onSend={sendMessage} disabled={status === "streaming"} effort={effort} onEffortChange={setEffort} />
+            <ExamplePrompts onSelect={sendMessage} />
+          </div>
         </div>
       ) : (
         <>
