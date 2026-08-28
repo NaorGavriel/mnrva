@@ -1,0 +1,56 @@
+.chat-header-text {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: center;
+  transform: translate(-50%, -50%) translateY(-120%);
+  transition: top 0.5s cubic-bezier(0.16, 1, 0.3, 1), left 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), gap 0.5s ease;
+}
+
+.chat-header-text--chat {
+  top: 18px;
+  left: 50%;
+  gap: 2px;
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.chat-repo-name {
+  font-size: 52px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin: 0;
+  transition: font-size 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chat-header-text--chat .chat-repo-name {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.chat-tagline {
+  font-size: 17px;
+  color: var(--text-dim);
+  margin: 0;
+  transition: font-size 0.5s ease, opacity 0.3s ease;
+}
+
+.chat-header-text--chat .chat-tagline {
+  font-size: 0;
+  opacity: 0;
+}
+
+.chat-synced {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0;
+  transition: font-size 0.5s ease;
+}
+
+.chat-header-text--chat .chat-synced {
+  font-size: 11px;
+}

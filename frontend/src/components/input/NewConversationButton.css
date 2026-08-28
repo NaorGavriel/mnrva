@@ -1,0 +1,39 @@
+.chat-new-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-h);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.chat-new-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.chat-new-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.chat-new-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 560px) {
+  .chat-new-btn {
+    padding: 8px;
+  }
+
+  .chat-new-btn-label {
+    display: none;
+  }
+}
