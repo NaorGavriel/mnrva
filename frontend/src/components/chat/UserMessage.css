@@ -1,0 +1,19 @@
+.chat-question {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-question:not(:first-child) {
+  margin-top: 16px;
+}
+
+.chat-bubble {
+  max-width: 80%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 18px 18px 4px 18px;
+  padding: 10px 16px;
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 145%;
+}

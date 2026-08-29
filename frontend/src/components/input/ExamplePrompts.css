@@ -1,0 +1,31 @@
+.example-prompts {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.example-prompt {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.example-prompt:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.example-prompt:active {
+  transform: scale(0.97);
+}

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TypedDict
 
-from psycopg_pool import ConnectionPool
+from psycopg_pool import AsyncConnectionPool, ConnectionPool
 
 
 class RepoMetadata(TypedDict):
@@ -43,6 +43,17 @@ def get_repo_metadata(pool: ConnectionPool) -> RepoMetadata | None:
         row = conn.execute(
             "SELECT github_url, commit_sha, updated_at FROM repo_metadata WHERE id = 1"
         ).fetchone()
+    if row is None:
+        return None
+    github_url, commit_sha, updated_at = row
+    return RepoMetadata(github_url=github_url, commit_sha=commit_sha, updated_at=updated_at)
+
+
+async def aget_repo_metadata(pool: AsyncConnectionPool) -> RepoMetadata | None:
+    """Async twin of get_repo_metadata, for the query agent's FastAPI app."""
+    async with pool.connection() as conn:
+        cur = await conn.execute("SELECT github_url, commit_sha, updated_at FROM repo_metadata WHERE id = 1")
+        row = await cur.fetchone()
     if row is None:
         return None
     github_url, commit_sha, updated_at = row

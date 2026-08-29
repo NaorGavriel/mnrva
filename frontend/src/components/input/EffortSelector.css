@@ -1,0 +1,34 @@
+.chat-effort {
+  display: inline-flex;
+  background: var(--code-bg);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.chat-effort button {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.chat-effort button:hover:not(:disabled):not(.is-active) {
+  color: var(--text-h);
+}
+
+.chat-effort button.is-active {
+  background: var(--bg-raised);
+  color: var(--text-h);
+  box-shadow: var(--shadow);
+}
+
+.chat-effort button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

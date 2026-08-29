@@ -1,0 +1,8 @@
+.chat-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  margin-top: 88px;
+  padding-bottom: 16px;
+}

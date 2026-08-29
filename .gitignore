@@ -220,6 +220,4 @@ __marimo__/
 # mnrva: scratch clone directory created by repository_clone.clone_repository
 repository_files/
 data/
-docs/query_agent_server.md
-docs/refresh_sync_deployment.md
-docs/refresh_sync_pipeline.md
+frontend/node_modules

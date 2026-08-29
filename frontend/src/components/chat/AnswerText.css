@@ -1,0 +1,27 @@
+.chat-answer-text {
+  font-size: 15.5px;
+  line-height: 168%;
+  color: var(--text);
+}
+
+.chat-answer-text :first-child {
+  margin-top: 0;
+}
+
+.chat-answer-text :last-child {
+  margin-bottom: 0;
+}
+
+.chat-answer-text a {
+  color: var(--accent);
+}
+
+.chat-answer-text ul,
+.chat-answer-text ol {
+  padding-left: 22px;
+  margin: 8px 0;
+}
+
+.chat-answer-text li + li {
+  margin-top: 4px;
+}
