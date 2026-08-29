@@ -26,7 +26,7 @@ _TYPESCRIPT = LanguageConfig(
     # tree (including nested in a `variable_declarator`), but the symbol
     # name for a named arrow function still has to be resolved from its
     # enclosing declarator, not from this node type alone. See
-    # docs/code_parser.md §1.2/§1.8 — under-chunked naming accepted for v1.
+    # docs/ingest_index_pipeline.md §1.2 — under-chunked naming accepted for v1.
     unit_node_types={"function_declaration", "arrow_function"},
     import_node_types={"import_statement"},
 )
