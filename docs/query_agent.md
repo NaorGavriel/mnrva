@@ -73,33 +73,14 @@ All LLM nodes run on `AGENT_MODEL` (env var).
    `HumanMessage` for the question is appended by the caller before
    `graph.invoke()` (§2.3).
 
-## Edges
-
-1. `START → build_conversation_window`
-2. `build_conversation_window → evaluate_question`
-3. `evaluate_question → retrieve_documents`
-4. `retrieve_documents → grade_documents`
-5. `grade_documents → generate_answer`
-6. `generate_answer → evaluate_answer`
-7. `evaluate_answer → retrieve_documents` — `bad` and `retrieval_attempts < cap`
-8. `evaluate_answer → persist_agent_message` — `good`, or cap hit
-9. `persist_agent_message → END`
-
 ## 2.1 Retrieval
 
-- **`search_chunks`** (`chunks.py`) — called directly by
-  `retrieve_documents`. Uses Qdrant's Query API.
-
+- **`search_chunks`** (`chunks.py`) — Qdrant Query API search. Chunks carry
+  `raw_text`/`context_text` in their payload, so a hit is self-contained.
 - **`get_chunks_by_id`** (`chunks.py`) — a lookup, not a search: one
-  batched Qdrant `retrieve()` by chunk id. Called by
-  `build_conversation_window`.
+  batched Qdrant `retrieve()` by chunk id.
 
 ## 2.2 Conversation & agent state
-
-LangGraph's Postgres checkpointer persists all of `AgentState` per
-`thread_id`. `thread_id` scopes *conversation* history only.
-`checkpointer_postgres.py` is a thin wrapper handing back a configured
-`AsyncPostgresSaver` over `db_postgres.py`'s connection pool.
 
 ```python
 class TurnContext(TypedDict):
@@ -123,17 +104,18 @@ class AgentState(TypedDict):
     evaluation_reasoning: str | None
 ```
 
-Only `messages` needs the `add_messages` reducer — it's written across
-turns by two different writers (the caller, `persist_agent_message`).
-Every other field, including `conversation_window`, has exactly one
-writer node, which manages its own merge/trim in plain code; LangGraph's
-default overwrite-on-return semantics are already correct for those, so
-no custom reducer is needed.
+Only `messages` needs the `add_messages` reducer — it has two writers
+across a turn (the caller's `HumanMessage`, `persist_agent_message`'s
+`AIMessage`), so writes must append rather than overwrite. Every other
+field has exactly one writer node that manages its own merge/trim in
+plain code, so LangGraph's default overwrite-on-return is already
+correct — including `conversation_window`, which persists and grows
+turn over turn rather than resetting.
 
 `Answer = {text: str, citations: list[Citation]}`. `Citation =
 {chunk_id, file_path, start_line, end_line, citation_text}` —
-`citation_text` is the quoted source excerpt itself (code or prose), not
-just its location. Each turn's answer flattens to:
+`citation_text` is the quoted source excerpt itself, not just its
+location. Each turn's answer flattens to:
 
 ```python
 AIMessage(
@@ -142,50 +124,19 @@ AIMessage(
 )
 ```
 
+A checkpointer persists all of `AgentState` (explained next section).
+
 ## 2.3 Life-cycle
 
-1. Caller starts a conversation with some `thread_id`, against some
-   already-running agent process, appending a `HumanMessage(question)` to
-   `messages` before calling `graph.ainvoke()`/`graph.astream()` (§2.6).
-2. The graph runs `build_conversation_window → evaluate_question →
-   retrieve_documents → grade_documents → generate_answer →
-   evaluate_answer` once, correcting via re-retrieval (up to the attempt
-   cap) if the answer grades bad, then `persist_agent_message`.
-3. Postgres checkpoints `AgentState` under `thread_id` — visible to any
-   process handling a follow-up on that `thread_id`, not just the one
-   that handled turn 1.
-4. Follow-up turn, possibly on a different process: prior state restored
-   from Postgres.
+LangGraph's Postgres checkpointer persists all of `AgentState` per
+`thread_id`, written after every node. A follow-up turn restores prior state and can
+continue the conversation from a different process.
 
 ## 2.4 Constraints
 
-- **`retrieval_attempts` cap** — flat cap enforced in `graph.py`
-  (`RETRIEVAL_ATTEMPTS_CAP`).
-- **`CONVERSATION_WINDOW_TURNS` cap** (env var) — bounds
-  `conversation_window`; oldest turn evicted once over the cap.
+- **`retrieval_attempts` cap**: each `Effort` sets its own `retrieval_attempts_cap`, checked in `graph.py`'s post-`evaluate_answer` routing.
+- **`CONVERSATION_WINDOW_TURNS` cap** (env var) - bounds `conversation_window`.
 
-## 2.5 Decisions & reasoning (recap)
+## 2.5 Streaming & serving
 
-- **`raw_text`/`context_text` added to the Qdrant payload** — makes a
-  search hit self-contained.
-- **Repo metadata and conversation state in Postgres, not Qdrant** —
-  Qdrant stays a pure vector/payload store; Postgres is the
-  system-of-record for everything relational. Conversation checkpointing
-  uses LangGraph's own Postgres checkpointer rather than a hand-rolled messages table.
-- **Per-chunk grading before generation, answer-level grading after** —
-  `grade_documents` filters what `generate_answer` sees; `evaluate_answer`
-  separately judges whether the resulting answer actually holds up
-  against the user's question. Relevant-looking hits don't guarantee the
-  question got answered.
-- **Corrective re-retrieval on `evaluate_answer`, not `grade_documents`**
-  — a document-relevance check alone can pass (some chunks are on-topic)
-  while the synthesized answer still falls short; gating the loop on the
-  answer catches that.
-
-## 2.6 Streaming & serving
-
-The graph runs async end-to-end, invoked via `ainvoke`/`astream`.
-Served by `query_agent/api.py`, a FastAPI app whose lifespan opens the
-async Qdrant client and Postgres pool once and builds the graph once.
-`POST /threads/{thread_id}/query` streams the turn as Server-Sent Events,
-one event per finished node.
+Async end-to-end (`ainvoke`/`astream`). Serving details — the FastAPI app, endpoints, and SSE framing — are in `docs/query_agent_api_frontend.md`.
