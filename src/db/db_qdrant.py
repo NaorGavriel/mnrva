@@ -1,4 +1,6 @@
+import asyncio
 import os
+import time
 
 from qdrant_client import AsyncQdrantClient, QdrantClient, models
 
@@ -22,6 +24,20 @@ def init_async_client(url: str | None = None, api_key: str | None = None) -> Asy
     if url is not None:
         return AsyncQdrantClient(url=url, api_key=api_key)
     raise ValueError("init_async_client requires url")
+
+
+async def wait_until_ready(client: AsyncQdrantClient, timeout: float = 30.0, interval: float = 1.0) -> None:
+    """Poll Qdrant with `get_collections()` every `interval` seconds until it responds or `timeout` elapses."""
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            await client.get_collections()
+            return
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(interval)
+    raise ConnectionError(f"Qdrant at {QDRANT_URL} not reachable after {timeout}s") from last_error
 
 
 def ensure_collection(client: QdrantClient, name: str) -> None:

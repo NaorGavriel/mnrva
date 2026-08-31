@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
     """Open the Qdrant client and Postgres pool once for the app's lifetime, and build the graph
     once from them - it's reused across requests, threads distinguished by thread_id."""
     client = db_qdrant.init_async_client(url=db_qdrant.QDRANT_URL, api_key=db_qdrant.QDRANT_API_KEY)
+    await db_qdrant.wait_until_ready(client)
     pool = await init_async_pool()
     app.state.pool = pool
     app.state.graph = await build_graph(client, pool)

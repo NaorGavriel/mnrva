@@ -23,6 +23,9 @@ def main() -> None:
     except Exception as exc:
         print(f"refresh: failed - {exc}")
         sys.exit(1)
+    finally:
+        pool.close()
+        client.close()
 
     print(
         f"refresh: {result['old_sha']} -> {result['new_sha']} "

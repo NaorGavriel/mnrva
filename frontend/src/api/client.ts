@@ -1,7 +1,7 @@
 import type { QueryRequest, QueryTurnEvent, RepoMetadata, ThreadResponse } from "../types.ts";
 import { readSseFrames } from "./sse.ts";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 /** Creates a new conversation thread. Stateless server-side (query_agent/api.py just mints a uuid4). */
 export async function createThread(signal?: AbortSignal): Promise<string> {
