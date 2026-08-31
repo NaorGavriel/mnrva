@@ -7,8 +7,8 @@ It indexes a git repository into structure-aware, context-enriched chunks, answe
 ## Screenshots
 
 <p align="center">
-   <img src="./screenshots/main-page.png" width="45%" />
-   <img src="./screenshots/chat-page.png" width="45%" />
+   <img src="screenshots/main-page.PNG" width="70%" />
+   <img src="screenshots/chat-page.PNG" width="70%" />
 </p>
 
 ## Architecture
