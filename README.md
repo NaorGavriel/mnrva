@@ -1,4 +1,10 @@
-# mnrva
+<p align="center">
+   <picture>
+     <source media="(prefers-color-scheme: dark)" srcset="./assets/mnrva-dark.svg">
+     <img src="./assets/mnrva-light.svg" alt="mnrva" width="300">
+   </picture>
+</p>
+
 
 mnrva is a retrieval-augmented system for querying a codebase in natural language - "how is auth implemented?", answered by an agent that actually reads and cites your code.
 
