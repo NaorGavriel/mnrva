@@ -115,8 +115,7 @@ See [`.env.example`](./.env.example) for a fillable template.
    loop.
 4. Read the answer and its citations; follow-up questions reuse the same
    `thread_id` and fold the prior turn into context.
-5. Keep the index current by running `docker compose run --rm sync` (locally)
-   manually, or scheduling it via the reusable GitHub Actions workflow (cloud).
+5. Keep the index current by running `docker compose run --rm sync`
 
 ## Constraints
 
